@@ -25,7 +25,7 @@ jobs:
         run: npm run build
 
       - name: Deploy to Azure App Service
-        uses: azure/webapps-deploy@v3
+        uses: azure/webapps-deploy@v2
         with:
           app-name: evry-bites
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
