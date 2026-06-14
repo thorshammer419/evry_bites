@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { appRouter } from "../../server/routers/_app";
 import { createCallerFactory } from "../../server/trpc";
 import { OrderFormClient } from "./OrderFormClient";
