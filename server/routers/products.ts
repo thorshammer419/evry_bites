@@ -1,0 +1,83 @@
+import { z } from "zod";
+import { router, publicProcedure } from "../trpc";
+import { db } from "../../lib/db";
+
+export const productsRouter = router({
+  listActive: publicProcedure.query(() =>
+    db.product.findMany({
+      where: { active: true },
+      orderBy: { name: "asc" },
+    })
+  ),
+
+  listAll: publicProcedure.query(() =>
+    db.product.findMany({
+      orderBy: { name: "asc" },
+    })
+  ),
+
+  create: publicProcedure
+    .input(
+      z.object({
+        name: z.string().min(1),
+        description: z.string().min(1),
+        price: z.string(),
+        batchSize: z.number().int().positive(),
+        unitLabel: z.string().min(1),
+        imageUrl: z.string().optional(),
+        active: z.boolean().default(true),
+      })
+    )
+    .mutation(({ input }) =>
+      db.product.create({
+        data: {
+          name: input.name,
+          description: input.description,
+          price: input.price,
+          batchSize: input.batchSize,
+          unitLabel: input.unitLabel,
+          imageUrl: input.imageUrl || null,
+          active: input.active,
+        },
+      })
+    ),
+
+  update: publicProcedure
+    .input(
+      z.object({
+        id: z.string(),
+        name: z.string().min(1),
+        description: z.string().min(1),
+        price: z.string(),
+        batchSize: z.number().int().positive(),
+        unitLabel: z.string().min(1),
+        imageUrl: z.string().optional(),
+        active: z.boolean(),
+      })
+    )
+    .mutation(({ input }) =>
+      db.product.update({
+        where: { id: input.id },
+        data: {
+          name: input.name,
+          description: input.description,
+          price: input.price,
+          batchSize: input.batchSize,
+          unitLabel: input.unitLabel,
+          imageUrl: input.imageUrl || null,
+          active: input.active,
+        },
+      })
+    ),
+
+  toggleActive: publicProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ input }) => {
+      const product = await db.product.findUnique({ where: { id: input.id } });
+      if (!product) throw new Error("Product not found");
+      return db.product.update({
+        where: { id: input.id },
+        data: { active: !product.active },
+      });
+    }),
+});

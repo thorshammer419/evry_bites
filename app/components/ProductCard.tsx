@@ -1,0 +1,83 @@
+"use client";
+
+import Image from "next/image";
+import type { Product } from "@prisma/client";
+import { useCart } from "../../lib/cart";
+
+interface ProductCardProps {
+  product: Product;
+}
+
+export function ProductCard({ product }: ProductCardProps) {
+  const { cart, setQuantity } = useCart();
+  const quantity = cart[product.id] ?? 0;
+
+  const price = Number(product.price);
+
+  return (
+    <div className="bg-white rounded-3xl shadow-sm border border-amber-100 overflow-hidden flex flex-col">
+      <div className="relative h-48 bg-amber-50">
+        {product.imageUrl ? (
+          <Image
+            src={product.imageUrl}
+            alt={product.name}
+            fill
+            className="object-cover"
+          />
+        ) : (
+          <div className="flex h-full items-center justify-center text-5xl">
+            🧁
+          </div>
+        )}
+      </div>
+
+      <div className="p-4 flex flex-col flex-1 gap-3">
+        <div>
+          <h2 className="text-lg font-semibold text-amber-900">
+            {product.name}
+          </h2>
+          <p className="text-sm text-amber-700 mt-1 leading-relaxed">
+            {product.description}
+          </p>
+        </div>
+
+        <div className="mt-auto flex items-center justify-between">
+          <div>
+            <span className="text-lg font-bold text-amber-900">
+              ${price.toFixed(2)}
+            </span>
+            <span className="text-xs text-amber-600 ml-1">
+              / {product.unitLabel}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setQuantity(product.id, quantity - 1)}
+              className="w-8 h-8 rounded-full bg-amber-100 text-amber-800 font-bold text-lg flex items-center justify-center hover:bg-amber-200 active:bg-amber-300 transition-colors disabled:opacity-30"
+              aria-label="Decrease quantity"
+              disabled={quantity === 0}
+            >
+              −
+            </button>
+            <span className="w-6 text-center font-semibold text-amber-900">
+              {quantity}
+            </span>
+            <button
+              onClick={() => setQuantity(product.id, quantity + 1)}
+              className="w-8 h-8 rounded-full bg-amber-800 text-white font-bold text-lg flex items-center justify-center hover:bg-amber-700 active:bg-amber-900 transition-colors"
+              aria-label="Increase quantity"
+            >
+              +
+            </button>
+          </div>
+        </div>
+
+        <p className="text-xs text-amber-500 text-right">
+          {product.batchSize}{" "}
+          {product.batchSize === 1 ? "piece" : "pieces"} per {product.unitLabel}
+        </p>
+      </div>
+    </div>
+  );
+}

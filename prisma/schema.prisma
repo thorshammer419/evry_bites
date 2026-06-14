@@ -1,0 +1,67 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum FulfillmentType {
+  local_delivery
+  shipping
+}
+
+enum PaymentMethod {
+  venmo
+  paypal
+  cash
+  check
+}
+
+enum OrderStatus {
+  received
+  confirmed
+  ready
+  shipped
+  delivered
+}
+
+model Product {
+  id          String       @id @default(uuid())
+  name        String
+  description String
+  price       Decimal      @db.Decimal(10, 2)
+  batchSize   Int
+  unitLabel   String
+  imageUrl    String?
+  active      Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  orderItems  OrderItem[]
+}
+
+model Order {
+  id              String          @id @default(uuid())
+  customerName    String
+  customerEmail   String
+  customerPhone   String
+  fulfillmentType FulfillmentType
+  address         String?
+  paymentMethod   PaymentMethod
+  notes           String?
+  status          OrderStatus     @default(received)
+  totalAmount     Decimal         @db.Decimal(10, 2)
+  paymentStatus   String?
+  createdAt       DateTime        @default(now())
+  orderItems      OrderItem[]
+}
+
+model OrderItem {
+  id        String   @id @default(uuid())
+  orderId   String
+  productId String
+  quantity  Int
+  unitPrice Decimal  @db.Decimal(10, 2)
+  subtotal  Decimal  @db.Decimal(10, 2)
+  order     Order    @relation(fields: [orderId], references: [id])
+  product   Product  @relation(fields: [productId], references: [id])
+}
