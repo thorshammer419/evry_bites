@@ -70,7 +70,10 @@ export class AcsNotifier implements Notifier {
   ): Promise<void> {
     const fromEmail = process.env.ACS_FROM_EMAIL;
     const fromPhone = process.env.ACS_FROM_PHONE;
-    const ownerEmail = process.env.OWNER_NOTIFICATION_EMAIL;
+    const ownerEmails = (process.env.OWNER_NOTIFICATION_EMAIL ?? "")
+      .split(",")
+      .map((e) => e.trim())
+      .filter(Boolean);
 
     const ref = order.id.slice(0, 8).toUpperCase();
     const total = `$${Number(order.totalAmount).toFixed(2)}`;
@@ -108,10 +111,10 @@ export class AcsNotifier implements Notifier {
           })
         : Promise.resolve(),
 
-      fromEmail && ownerEmail
+      fromEmail && ownerEmails.length > 0
         ? new EmailClient(connectionString).beginSend({
             senderAddress: fromEmail,
-            recipients: { to: [{ address: ownerEmail }] },
+            recipients: { to: ownerEmails.map((address) => ({ address })) },
             content: { subject: ownerSubject, plainText: ownerBody },
           })
         : Promise.resolve(),
