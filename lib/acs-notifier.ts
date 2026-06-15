@@ -13,42 +13,49 @@ function toE164(phone: string): string | null {
   return null;
 }
 
+function customerName(order: OrderForNotification): string {
+  const first = order.firstName ?? "";
+  const last = order.lastName ?? "";
+  return `${first} ${last}`.trim() || "Customer";
+}
+
 function getStatusMessage(
   order: OrderForNotification,
   newStatus: OrderStatus
 ): { subject: string; body: string; sms: string } {
   const ref = order.id.slice(0, 8).toUpperCase();
   const total = `$${Number(order.totalAmount).toFixed(2)}`;
+  const name = customerName(order);
 
   switch (newStatus) {
     case "confirmed":
       return {
         subject: `EvryBites Order #${ref} — Confirmed!`,
-        body: `Hi ${order.customerName},\n\nYour EvryBites order (#${ref}) is confirmed and being prepared! We'll reach out again when it's ready.\n\nTotal: ${total}\n\nThanks for ordering!`,
+        body: `Hi ${name},\n\nYour EvryBites order (#${ref}) is confirmed and being prepared! We'll reach out again when it's ready.\n\nTotal: ${total}\n\nThanks for ordering!`,
         sms: `EvryBites: Your order #${ref} is confirmed and being prepared! Total: ${total}`,
       };
     case "ready":
       return order.fulfillmentType === "local_delivery"
         ? {
             subject: `EvryBites Order #${ref} — Ready for Delivery!`,
-            body: `Hi ${order.customerName},\n\nGreat news! Your order (#${ref}) is ready and on its way to you.\n\nTotal: ${total}`,
+            body: `Hi ${name},\n\nGreat news! Your order (#${ref}) is ready and on its way to you.\n\nTotal: ${total}`,
             sms: `EvryBites: Your order #${ref} is ready and out for delivery! Total: ${total}`,
           }
         : {
             subject: `EvryBites Order #${ref} — Ready to Ship!`,
-            body: `Hi ${order.customerName},\n\nYour order (#${ref}) is packed and ready to ship! You'll receive tracking info shortly.\n\nTotal: ${total}`,
+            body: `Hi ${name},\n\nYour order (#${ref}) is packed and ready to ship! You'll receive tracking info shortly.\n\nTotal: ${total}`,
             sms: `EvryBites: Your order #${ref} is packed and ready to ship! Total: ${total}`,
           };
     case "delivered":
       return {
         subject: `EvryBites Order #${ref} — Delivered!`,
-        body: `Hi ${order.customerName},\n\nYour order (#${ref}) has been delivered. We hope you enjoy every bite!\n\nTotal: ${total}`,
+        body: `Hi ${name},\n\nYour order (#${ref}) has been delivered. We hope you enjoy every bite!\n\nTotal: ${total}`,
         sms: `EvryBites: Your order #${ref} has been delivered. Enjoy!`,
       };
     case "shipped":
       return {
         subject: `EvryBites Order #${ref} — Shipped!`,
-        body: `Hi ${order.customerName},\n\nYour order (#${ref}) is on its way! Check your email for tracking information.\n\nTotal: ${total}`,
+        body: `Hi ${name},\n\nYour order (#${ref}) is on its way! Check your email for tracking information.\n\nTotal: ${total}`,
         sms: `EvryBites: Your order #${ref} has shipped! Check email for tracking.`,
       };
     default:
@@ -84,6 +91,7 @@ export class AcsNotifier implements Notifier {
 
     const ref = order.id.slice(0, 8).toUpperCase();
     const total = `$${Number(order.totalAmount).toFixed(2)}`;
+    const name = customerName(order);
     const itemsList = order.orderItems
       .map(
         (i) =>
@@ -92,11 +100,11 @@ export class AcsNotifier implements Notifier {
       .join("\n");
 
     const customerSubject = `EvryBites — Order #${ref} Received!`;
-    const customerBody = `Hi ${order.customerName},\n\nThank you for your order! We've received it and will confirm soon.\n\nOrder #${ref}\n\n${itemsList}\n\nTotal: ${total}\n\nWe'll reach out to confirm your order shortly. Thank you for supporting EvryBites!`;
+    const customerBody = `Hi ${name},\n\nThank you for your order! We've received it and will confirm soon.\n\nOrder #${ref}\n\n${itemsList}\n\nTotal: ${total}\n\nWe'll reach out to confirm your order shortly. Thank you for supporting EvryBites!`;
     const customerSms = `EvryBites: Order #${ref} received! Total: ${total}. We'll confirm shortly.`;
 
-    const ownerSubject = `New EvryBites Order #${ref} from ${order.customerName}`;
-    const ownerBody = `New order received!\n\nOrder #${ref}\nCustomer: ${order.customerName}\nEmail: ${order.customerEmail}\nPhone: ${order.customerPhone}\nFulfillment: ${order.fulfillmentType}\nPayment: ${order.paymentMethod}\n\nItems:\n${itemsList}\n\nTotal: ${total}`;
+    const ownerSubject = `New EvryBites Order #${ref} from ${name}`;
+    const ownerBody = `New order received!\n\nOrder #${ref}\nCustomer: ${name}\nEmail: ${order.customerEmail}\nPhone: ${order.customerPhone}\nFulfillment: ${order.fulfillmentType}\nPayment: ${order.paymentMethod}\n\nItems:\n${itemsList}\n\nTotal: ${total}`;
 
     const { EmailClient } = await import("@azure/communication-email");
     const { SmsClient } = await import("@azure/communication-sms");

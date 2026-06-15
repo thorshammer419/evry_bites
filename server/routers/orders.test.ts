@@ -28,11 +28,15 @@ const mockNotify = vi.fn().mockResolvedValue(undefined);
 const caller = makeCallerWithNotifier({ notify: mockNotify });
 
 const validInput = {
-  customerName: "Jane Smith",
+  firstName: "Jane",
+  lastName: "Smith",
   customerEmail: "jane@example.com",
   customerPhone: "605-555-1234",
   fulfillmentType: "local_delivery" as const,
-  address: "123 Main St, Rapid City, SD 57701",
+  addressLine1: "123 Main St",
+  city: "Rapid City",
+  state: "SD",
+  zip: "57701",
   paymentMethod: "venmo" as const,
   notes: "Please include extra napkins",
   items: [
@@ -69,16 +73,20 @@ const mockProducts = [
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const mockOrder: any = {
   id: "order-123",
-  customerName: "Jane Smith",
+  firstName: "Jane",
+  lastName: "Smith",
   customerEmail: "jane@example.com",
   customerPhone: "605-555-1234",
   fulfillmentType: "local_delivery",
-  address: "123 Main St, Rapid City, SD 57701",
+  addressLine1: "123 Main St",
+  city: "Rapid City",
+  state: "SD",
+  zip: "57701",
   paymentMethod: "venmo",
   notes: "Please include extra napkins",
   status: "received",
   totalAmount: "39.00",
-  paymentStatus: null,
+  paypalOrderId: null,
   createdAt: new Date(),
   orderItems: [
     {
@@ -120,7 +128,8 @@ describe("orders.submit", () => {
     expect(db.order.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          customerName: "Jane Smith",
+          firstName: "Jane",
+          lastName: "Smith",
           totalAmount: "39.00",
           orderItems: {
             create: expect.arrayContaining([

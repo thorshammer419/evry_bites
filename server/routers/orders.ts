@@ -8,12 +8,16 @@ const INCLUDE_FULL = {
   orderItems: { include: { product: true } },
 } as const;
 
-const submitInputSchema = z.object({
-  customerName: z.string().min(1),
+const orderFieldsSchema = z.object({
+  firstName: z.string().min(1),
+  lastName: z.string().min(1),
   customerEmail: z.string().email(),
   customerPhone: z.string().min(1),
   fulfillmentType: z.enum(["local_delivery", "shipping"]),
-  address: z.string().min(1),
+  addressLine1: z.string().min(1),
+  city: z.string().min(1),
+  state: z.string().length(2),
+  zip: z.string().regex(/^\d{5}$/, "ZIP must be 5 digits"),
   paymentMethod: z.enum(["venmo", "paypal", "cash", "check"]),
   notes: z.string().optional(),
   items: z
@@ -25,6 +29,50 @@ const submitInputSchema = z.object({
     )
     .min(1),
 });
+
+async function resolveProducts(items: { productId: string; quantity: number }[]) {
+  const productIds = items.map((i) => i.productId);
+  const products = await db.product.findMany({ where: { id: { in: productIds } } });
+
+  const productMap: Record<string, (typeof products)[number]> = {};
+  for (const product of products) productMap[product.id] = product;
+
+  for (const item of items) {
+    const product = productMap[item.productId];
+    if (!product || !product.active) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: "One or more items are no longer available." });
+    }
+  }
+
+  let totalAmount = 0;
+  for (const item of items) {
+    totalAmount += Number(productMap[item.productId].price) * item.quantity;
+  }
+
+  return { productMap, totalAmount };
+}
+
+async function getPaypalAccessToken(): Promise<string> {
+  const clientId = process.env.PAYPAL_CLIENT_ID;
+  const secret = process.env.PAYPAL_CLIENT_SECRET;
+  const mode = process.env.PAYPAL_MODE ?? "sandbox";
+  const baseUrl = mode === "live"
+    ? "https://api-m.paypal.com"
+    : "https://api-m.sandbox.paypal.com";
+
+  const res = await fetch(`${baseUrl}/v1/oauth2/token`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Authorization: `Basic ${Buffer.from(`${clientId}:${secret}`).toString("base64")}`,
+    },
+    body: "grant_type=client_credentials",
+  });
+
+  if (!res.ok) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to authenticate with PayPal." });
+  const data = await res.json() as { access_token: string };
+  return data.access_token;
+}
 
 export const ordersRouter = router({
   listAll: publicProcedure.query(() =>
@@ -61,58 +109,32 @@ export const ordersRouter = router({
     }),
 
   submit: publicProcedure
-    .input(submitInputSchema)
+    .input(orderFieldsSchema)
     .mutation(async ({ input, ctx }) => {
-      const productIds = input.items.map((i) => i.productId);
-
-      const products = await db.product.findMany({
-        where: { id: { in: productIds } },
-      });
-
-      // Validate all products exist and are active
-      const productMap: Record<string, (typeof products)[number]> = {};
-      for (const product of products) {
-        productMap[product.id] = product;
-      }
-
-      for (const item of input.items) {
-        const product = productMap[item.productId];
-        if (!product || !product.active) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "One or more items are no longer available.",
-          });
-        }
-      }
-
-      // Compute prices server-side
-      let totalAmount = 0;
-      for (const item of input.items) {
-        const product = productMap[item.productId];
-        const unitPrice = Number(product.price);
-        totalAmount += unitPrice * item.quantity;
-      }
+      const { productMap, totalAmount } = await resolveProducts(input.items);
 
       const order = await db.order.create({
         data: {
-          customerName: input.customerName,
+          firstName: input.firstName,
+          lastName: input.lastName,
           customerEmail: input.customerEmail,
           customerPhone: input.customerPhone,
           fulfillmentType: input.fulfillmentType,
-          address: input.address,
+          addressLine1: input.addressLine1,
+          city: input.city,
+          state: input.state,
+          zip: input.zip,
           paymentMethod: input.paymentMethod,
           notes: input.notes,
           totalAmount: totalAmount.toFixed(2),
           orderItems: {
             create: input.items.map((item) => {
-              const product = productMap[item.productId];
-              const unitPrice = Number(product.price);
-              const subtotal = unitPrice * item.quantity;
+              const unitPrice = Number(productMap[item.productId].price);
               return {
                 productId: item.productId,
                 quantity: item.quantity,
                 unitPrice: unitPrice.toFixed(2),
-                subtotal: subtotal.toFixed(2),
+                subtotal: (unitPrice * item.quantity).toFixed(2),
               };
             }),
           },
@@ -120,7 +142,106 @@ export const ordersRouter = router({
         include: { orderItems: { include: { product: true } } },
       });
 
-      // Fire-and-forget: don't block the submit response on notification delivery
+      ctx.notifier
+        .notify({ type: "order.received", order })
+        .catch((err) => console.error("[orders] order-received notification failed:", err));
+
+      return order;
+    }),
+
+  createPaypalOrder: publicProcedure
+    .input(orderFieldsSchema)
+    .mutation(async ({ input }) => {
+      const { productMap, totalAmount } = await resolveProducts(input.items);
+      const mode = process.env.PAYPAL_MODE ?? "sandbox";
+      const baseUrl = mode === "live"
+        ? "https://api-m.paypal.com"
+        : "https://api-m.sandbox.paypal.com";
+
+      const order = await db.order.create({
+        data: {
+          firstName: input.firstName,
+          lastName: input.lastName,
+          customerEmail: input.customerEmail,
+          customerPhone: input.customerPhone,
+          fulfillmentType: input.fulfillmentType,
+          addressLine1: input.addressLine1,
+          city: input.city,
+          state: input.state,
+          zip: input.zip,
+          paymentMethod: input.paymentMethod,
+          notes: input.notes,
+          status: "pending_payment",
+          totalAmount: totalAmount.toFixed(2),
+          orderItems: {
+            create: input.items.map((item) => {
+              const unitPrice = Number(productMap[item.productId].price);
+              return {
+                productId: item.productId,
+                quantity: item.quantity,
+                unitPrice: unitPrice.toFixed(2),
+                subtotal: (unitPrice * item.quantity).toFixed(2),
+              };
+            }),
+          },
+        },
+        include: { orderItems: { include: { product: true } } },
+      });
+
+      const accessToken = await getPaypalAccessToken();
+      const paypalRes = await fetch(`${baseUrl}/v2/checkout/orders`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          intent: "CAPTURE",
+          purchase_units: [{
+            reference_id: order.id,
+            amount: { currency_code: "USD", value: totalAmount.toFixed(2) },
+          }],
+        }),
+      });
+
+      if (!paypalRes.ok) {
+        await db.order.delete({ where: { id: order.id } });
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to create PayPal order." });
+      }
+
+      const paypalOrder = await paypalRes.json() as { id: string };
+      await db.order.update({ where: { id: order.id }, data: { paypalOrderId: paypalOrder.id } });
+
+      return { orderId: order.id, paypalOrderId: paypalOrder.id };
+    }),
+
+  capturePaypalOrder: publicProcedure
+    .input(z.object({ orderId: z.string(), paypalOrderId: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const mode = process.env.PAYPAL_MODE ?? "sandbox";
+      const baseUrl = mode === "live"
+        ? "https://api-m.paypal.com"
+        : "https://api-m.sandbox.paypal.com";
+
+      const accessToken = await getPaypalAccessToken();
+      const captureRes = await fetch(`${baseUrl}/v2/checkout/orders/${input.paypalOrderId}/capture`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+
+      if (!captureRes.ok) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Payment capture failed." });
+      }
+
+      const order = await db.order.update({
+        where: { id: input.orderId },
+        data: { status: "received" },
+        include: { orderItems: { include: { product: true } } },
+      });
+
       ctx.notifier
         .notify({ type: "order.received", order })
         .catch((err) => console.error("[orders] order-received notification failed:", err));

@@ -19,6 +19,7 @@ enum PaymentMethod {
 }
 
 enum OrderStatus {
+  pending_payment
   received
   confirmed
   ready
@@ -41,16 +42,20 @@ model Product {
 
 model Order {
   id              String          @id @default(uuid())
-  customerName    String
+  firstName       String?
+  lastName        String?
   customerEmail   String
   customerPhone   String
   fulfillmentType FulfillmentType
-  address         String?
+  addressLine1    String?
+  city            String?
+  state           String?
+  zip             String?
   paymentMethod   PaymentMethod
   notes           String?
   status          OrderStatus     @default(received)
   totalAmount     Decimal         @db.Decimal(10, 2)
-  paymentStatus   String?
+  paypalOrderId   String?
   createdAt       DateTime        @default(now())
   orderItems      OrderItem[]
 }

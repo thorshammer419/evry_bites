@@ -108,10 +108,10 @@ export default async function OrderConfirmationPage({
               <span className="font-medium text-amber-900">Method:</span>{" "}
               {FULFILLMENT_LABELS[order.fulfillmentType]}
             </p>
-            {order.address && (
+            {order.addressLine1 && (
               <p>
                 <span className="font-medium text-amber-900">Address:</span>{" "}
-                {order.address}
+                {order.addressLine1}{order.city ? `, ${order.city}` : ""}{order.state ? `, ${order.state}` : ""}{order.zip ? ` ${order.zip}` : ""}
               </p>
             )}
           </div>

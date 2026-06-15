@@ -2,7 +2,8 @@ import type { FulfillmentType, OrderStatus } from "@prisma/client";
 
 export interface OrderForNotification {
   id: string;
-  customerName: string;
+  firstName: string | null;
+  lastName: string | null;
   customerEmail: string;
   customerPhone: string;
   fulfillmentType: FulfillmentType;

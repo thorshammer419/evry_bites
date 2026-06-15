@@ -8,11 +8,15 @@ import { nextStatuses } from "../../../lib/order-lifecycle";
 
 type OrderWithItems = {
   id: string;
-  customerName: string;
+  firstName: string | null;
+  lastName: string | null;
   customerEmail: string;
   customerPhone: string;
   fulfillmentType: FulfillmentType;
-  address: string | null;
+  addressLine1: string | null;
+  city: string | null;
+  state: string | null;
+  zip: string | null;
   paymentMethod: PaymentMethod;
   notes: string | null;
   status: OrderStatus;
@@ -28,6 +32,7 @@ type OrderWithItems = {
 };
 
 const STATUS_LABELS: Record<OrderStatus, string> = {
+  pending_payment: "Pending Payment",
   received: "Received",
   confirmed: "Confirmed",
   ready: "Ready",
@@ -36,6 +41,7 @@ const STATUS_LABELS: Record<OrderStatus, string> = {
 };
 
 const STATUS_COLORS: Record<OrderStatus, string> = {
+  pending_payment: "bg-gray-100 text-gray-600",
   received: "bg-yellow-100 text-yellow-800",
   confirmed: "bg-blue-100 text-blue-800",
   ready: "bg-purple-100 text-purple-800",
@@ -89,7 +95,7 @@ function OrderRow({ order }: { order: OrderWithItems }) {
               {STATUS_LABELS[order.status]}
             </span>
           </div>
-          <p className="text-sm text-amber-700 mt-0.5">{order.customerName}</p>
+          <p className="text-sm text-amber-700 mt-0.5">{[order.firstName, order.lastName].filter(Boolean).join(" ") || order.customerEmail}</p>
           <p className="text-xs text-amber-500 mt-0.5">
             {order.fulfillmentType === "local_delivery" ? "Local Delivery" : "Shipping"} · {date}
           </p>
@@ -104,11 +110,13 @@ function OrderRow({ order }: { order: OrderWithItems }) {
             <p className="text-xs font-semibold text-amber-500 uppercase tracking-wide mb-2">
               Customer
             </p>
-            <p className="text-sm text-amber-900">{order.customerName}</p>
+            <p className="text-sm text-amber-900">{[order.firstName, order.lastName].filter(Boolean).join(" ") || "—"}</p>
             <p className="text-sm text-amber-700">{order.customerEmail}</p>
             <p className="text-sm text-amber-700">{order.customerPhone}</p>
-            {order.address && (
-              <p className="text-sm text-amber-700 mt-1">{order.address}</p>
+            {order.addressLine1 && (
+              <p className="text-sm text-amber-700 mt-1">
+                {order.addressLine1}{order.city ? `, ${order.city}` : ""}{order.state ? `, ${order.state}` : ""}{order.zip ? ` ${order.zip}` : ""}
+              </p>
             )}
           </div>
 
@@ -159,7 +167,7 @@ function OrderRow({ order }: { order: OrderWithItems }) {
                 <button
                   key={next}
                   onClick={() =>
-                    updateStatus.mutate({ id: order.id, status: next as Exclude<OrderStatus, "received"> })
+                    updateStatus.mutate({ id: order.id, status: next as Exclude<OrderStatus, "received" | "pending_payment"> })
                   }
                   disabled={updateStatus.isPending}
                   className="w-full bg-amber-800 text-white px-4 py-3 rounded-xl font-semibold text-sm hover:bg-amber-700 active:bg-amber-900 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
