@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createCallerFactory } from "../trpc";
 import { appRouter } from "./_app";
 import { db } from "../../lib/db";
-import { sendStatusNotification, sendOrderReceivedNotifications } from "../../lib/notifications";
+import type { Notifier } from "../../lib/notifier";
 
 vi.mock("../../lib/db", () => ({
   db: {
@@ -18,13 +18,14 @@ vi.mock("../../lib/db", () => ({
   },
 }));
 
-vi.mock("../../lib/notifications", () => ({
-  sendStatusNotification: vi.fn().mockResolvedValue(undefined),
-  sendOrderReceivedNotifications: vi.fn().mockResolvedValue(undefined),
-}));
-
 const createCaller = createCallerFactory(appRouter);
-const caller = createCaller({});
+
+function makeCallerWithNotifier(notifier: Notifier) {
+  return createCaller({ notifier });
+}
+
+const mockNotify = vi.fn().mockResolvedValue(undefined);
+const caller = makeCallerWithNotifier({ notify: mockNotify });
 
 const validInput = {
   customerName: "Jane Smith",
@@ -160,7 +161,6 @@ describe("orders.submit", () => {
   });
 
   it("rejects order when a product ID is not found", async () => {
-    // Only return one product, missing product-2
     vi.mocked(db.product.findMany).mockResolvedValue([mockProducts[0]]);
 
     await expect(caller.orders.submit(validInput)).rejects.toMatchObject({
@@ -171,7 +171,7 @@ describe("orders.submit", () => {
     expect(db.order.create).not.toHaveBeenCalled();
   });
 
-  it("fires sendOrderReceivedNotifications after successful submit", async () => {
+  it("fires order.received notification after successful submit", async () => {
     vi.mocked(db.product.findMany).mockResolvedValue(mockProducts);
     vi.mocked(db.order.create).mockResolvedValue(mockOrder);
 
@@ -180,18 +180,19 @@ describe("orders.submit", () => {
     // Allow the fire-and-forget promise to settle
     await Promise.resolve();
 
-    expect(sendOrderReceivedNotifications).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "order-123" })
-    );
+    expect(mockNotify).toHaveBeenCalledWith({
+      type: "order.received",
+      order: expect.objectContaining({ id: "order-123" }),
+    });
   });
 
-  it("does not call sendOrderReceivedNotifications when order creation fails", async () => {
+  it("does not fire notification when order creation fails", async () => {
     vi.mocked(db.product.findMany).mockResolvedValue(mockProducts);
     vi.mocked(db.order.create).mockRejectedValue(new Error("DB error"));
 
     await expect(caller.orders.submit(validInput)).rejects.toThrow();
 
-    expect(sendOrderReceivedNotifications).not.toHaveBeenCalled();
+    expect(mockNotify).not.toHaveBeenCalled();
   });
 });
 
@@ -211,10 +212,11 @@ describe("orders.updateStatus", () => {
       data: { status: "confirmed" },
       include: { orderItems: { include: { product: true } } },
     });
-    expect(sendStatusNotification).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "order-123" }),
-      "confirmed"
-    );
+    expect(mockNotify).toHaveBeenCalledWith({
+      type: "order.status_changed",
+      order: expect.objectContaining({ id: "order-123" }),
+      newStatus: "confirmed",
+    });
     expect(result.status).toBe("confirmed");
   });
 
@@ -238,7 +240,7 @@ describe("orders.updateStatus", () => {
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
 
     expect(db.order.update).not.toHaveBeenCalled();
-    expect(sendStatusNotification).not.toHaveBeenCalled();
+    expect(mockNotify).not.toHaveBeenCalled();
   });
 
   it("rejects delivered for shipping fulfillment type", async () => {

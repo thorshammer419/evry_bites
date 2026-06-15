@@ -2,7 +2,6 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, publicProcedure } from "../trpc";
 import { db } from "../../lib/db";
-import { sendStatusNotification, sendOrderReceivedNotifications } from "../../lib/notifications";
 import { isValidTransition } from "../../lib/order-lifecycle";
 
 const INCLUDE_FULL = {
@@ -37,7 +36,7 @@ export const ordersRouter = router({
 
   updateStatus: publicProcedure
     .input(z.object({ id: z.string(), status: z.enum(["confirmed", "ready", "shipped", "delivered"]) }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const order = await db.order.findUniqueOrThrow({
         where: { id: input.id },
         include: INCLUDE_FULL,
@@ -56,14 +55,14 @@ export const ordersRouter = router({
         include: INCLUDE_FULL,
       });
 
-      await sendStatusNotification(updated, input.status);
+      await ctx.notifier.notify({ type: "order.status_changed", order: updated, newStatus: input.status });
 
       return updated;
     }),
 
   submit: publicProcedure
     .input(submitInputSchema)
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const productIds = input.items.map((i) => i.productId);
 
       const products = await db.product.findMany({
@@ -122,9 +121,9 @@ export const ordersRouter = router({
       });
 
       // Fire-and-forget: don't block the submit response on notification delivery
-      sendOrderReceivedNotifications(order).catch((err) =>
-        console.error("[orders] order-received notification failed:", err)
-      );
+      ctx.notifier
+        .notify({ type: "order.received", order })
+        .catch((err) => console.error("[orders] order-received notification failed:", err));
 
       return order;
     }),

@@ -14,8 +14,10 @@ vi.mock("../../lib/db", () => ({
   },
 }));
 
+import { NullNotifier } from "../../lib/null-notifier";
+
 const createCaller = createCallerFactory(appRouter);
-const caller = createCaller({});
+const caller = createCaller({ notifier: new NullNotifier() });
 
 const mockProduct = {
   id: "1",

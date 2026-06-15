@@ -5,9 +5,10 @@ import ProductForm from "../../ProductForm";
 import { createCallerFactory } from "../../../../../server/trpc";
 import { appRouter } from "../../../../../server/routers/_app";
 import { uploadProductImage } from "../../../../../lib/blob";
+import { NullNotifier } from "../../../../../lib/null-notifier";
 
 const createCaller = createCallerFactory(appRouter);
-const caller = createCaller({});
+const caller = createCaller({ notifier: new NullNotifier() });
 
 interface EditProductPageProps {
   params: Promise<{ id: string }>;

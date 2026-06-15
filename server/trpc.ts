@@ -1,7 +1,12 @@
 import { initTRPC } from "@trpc/server";
 import superjson from "superjson";
+import type { Notifier } from "../lib/notifier";
 
-const t = initTRPC.create({
+export interface TRPCContext {
+  notifier: Notifier;
+}
+
+const t = initTRPC.context<TRPCContext>().create({
   transformer: superjson,
 });
 
