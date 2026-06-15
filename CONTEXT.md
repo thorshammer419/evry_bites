@@ -33,3 +33,7 @@ The lifecycle state of an Order. Progression:
 - `ready` — owner marks order as ready
 - `shipped` — terminal state for shipping orders
 - `delivered` — terminal state for local delivery orders
+
+## Order Lifecycle
+
+The structural rules governing which Order Status transitions are legal and what comes next. A transition's validity depends on both the current status and the Fulfillment Type (the `ready → terminal` split differs by fulfillment type). Centralized in `lib/order-lifecycle.ts`; exposes `isValidTransition`, `nextStatuses`, and `isTerminal`.

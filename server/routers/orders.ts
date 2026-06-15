@@ -1,34 +1,13 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import type { OrderStatus, FulfillmentType } from "@prisma/client";
 import { router, publicProcedure } from "../trpc";
 import { db } from "../../lib/db";
 import { sendStatusNotification, sendOrderReceivedNotifications } from "../../lib/notifications";
+import { isValidTransition } from "../../lib/order-lifecycle";
 
 const INCLUDE_FULL = {
   orderItems: { include: { product: true } },
 } as const;
-
-// Legal status transitions; fulfillment type governs the ready → terminal split
-const TRANSITIONS: Partial<Record<OrderStatus, OrderStatus[]>> = {
-  received: ["confirmed"],
-  confirmed: ["ready"],
-  ready: ["shipped", "delivered"],
-};
-
-function isValidTransition(
-  current: OrderStatus,
-  next: OrderStatus,
-  fulfillmentType: FulfillmentType
-): boolean {
-  const allowed = TRANSITIONS[current];
-  if (!allowed?.includes(next)) return false;
-  if (current === "ready" && next === "delivered" && fulfillmentType !== "local_delivery")
-    return false;
-  if (current === "ready" && next === "shipped" && fulfillmentType !== "shipping")
-    return false;
-  return true;
-}
 
 const submitInputSchema = z.object({
   customerName: z.string().min(1),
@@ -64,7 +43,7 @@ export const ordersRouter = router({
         include: INCLUDE_FULL,
       });
 
-      if (!isValidTransition(order.status, input.status, order.fulfillmentType)) {
+      if (!isValidTransition(order, input.status)) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: `Cannot transition from ${order.status} to ${input.status}.`,
