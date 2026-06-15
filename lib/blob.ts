@@ -1,6 +1,8 @@
 import { BlobServiceClient } from "@azure/storage-blob";
+import { validateProductImage } from "./product-image";
 
 export async function uploadProductImage(file: File): Promise<string> {
+  validateProductImage(file);
   const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING!;
   const containerName =
     process.env.AZURE_STORAGE_CONTAINER_NAME ?? "product-images";

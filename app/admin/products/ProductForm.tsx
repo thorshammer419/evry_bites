@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { validateProductImage, ImageValidationError } from "../../../lib/product-image";
 
 interface ProductFormProps {
   action: (formData: FormData) => Promise<void>;
@@ -17,9 +18,6 @@ interface ProductFormProps {
   submitLabel?: string;
 }
 
-const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
-const MAX_BYTES = 5 * 1024 * 1024;
-
 export default function ProductForm({
   action,
   defaultValues = {},
@@ -34,15 +32,15 @@ export default function ProductForm({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!ALLOWED_TYPES.includes(file.type)) {
-      setFileError("Only JPEG, PNG, or WebP images are allowed.");
-      e.target.value = "";
-      return;
-    }
-    if (file.size > MAX_BYTES) {
-      setFileError("Image must be smaller than 5 MB.");
-      e.target.value = "";
-      return;
+    try {
+      validateProductImage(file);
+    } catch (err) {
+      if (err instanceof ImageValidationError) {
+        setFileError(err.message);
+        e.target.value = "";
+        return;
+      }
+      throw err;
     }
 
     setFileError(null);
