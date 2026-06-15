@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { Product } from "@prisma/client";
@@ -16,7 +16,16 @@ type PaymentMethod = "venmo" | "paypal" | "cash" | "check";
 
 function OrderFormInner({ products }: OrderFormClientProps) {
   const router = useRouter();
-  const { cart, clearCart } = useCart();
+  const { cart, hydrated, clearCart, reconcile } = useCart();
+  const [removedItems, setRemovedItems] = useState<string[]>([]);
+  const hasReconciled = useRef(false);
+
+  useEffect(() => {
+    if (!hydrated || hasReconciled.current) return;
+    hasReconciled.current = true;
+    const removed = reconcile(products.map((p) => p.id));
+    if (removed.length > 0) setRemovedItems(removed);
+  }, [hydrated, cart, products, reconcile]);
 
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
@@ -101,6 +110,11 @@ function OrderFormInner({ products }: OrderFormClientProps) {
     return (
       <div className="min-h-screen bg-amber-50 flex items-center justify-center px-4">
         <div className="text-center">
+          {removedItems.length > 0 && (
+            <p className="text-sm text-amber-700 bg-amber-100 border border-amber-300 rounded-xl px-4 py-3 mb-6">
+              Some items in your cart are no longer available and were removed.
+            </p>
+          )}
           <p className="text-5xl mb-4">🛒</p>
           <p className="text-amber-800 font-medium text-lg mb-2">
             Your cart is empty.
@@ -137,6 +151,17 @@ function OrderFormInner({ products }: OrderFormClientProps) {
       </header>
 
       <main className="max-w-2xl mx-auto px-4 py-6 pb-12">
+        {removedItems.length > 0 && (
+          <div className="mb-4 rounded-xl bg-amber-100 border border-amber-300 px-4 py-3 text-sm text-amber-800">
+            Some items in your cart are no longer available and were removed.
+            <button
+              className="ml-2 underline font-medium"
+              onClick={() => setRemovedItems([])}
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Contact Information */}
           <section className="bg-white rounded-3xl shadow-sm border border-amber-100 p-4">

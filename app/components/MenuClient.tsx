@@ -1,47 +1,35 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Product } from "@prisma/client";
-import { CartProvider } from "../../lib/cart";
+import { CartProvider, useCart } from "../../lib/cart";
 import { ProductCard } from "./ProductCard";
 import { CartBar } from "./CartBar";
-
-const STORAGE_KEY = "evry_bites_cart";
 
 interface MenuClientProps {
   products: Product[];
 }
 
 function MenuClientInner({ products }: MenuClientProps) {
-  const [deactivatedNames, setDeactivatedNames] = useState<string[]>([]);
+  const { cart, hydrated, reconcile } = useCart();
+  const [removedItems, setRemovedItems] = useState<string[]>([]);
+  const hasReconciled = useRef(false);
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (!stored) return;
-      const cart: Record<string, number> = JSON.parse(stored);
-      const activeIds = new Set(products.map((p) => p.id));
-      const staleIds = Object.keys(cart).filter((id) => !activeIds.has(id));
-      if (staleIds.length === 0) return;
-
-      // Find names from the time of removal — we only have ids, so show count
-      setDeactivatedNames(staleIds.map((id) => id));
-      const cleaned = { ...cart };
-      staleIds.forEach((id) => delete cleaned[id]);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(cleaned));
-    } catch {
-      // ignore
-    }
-  }, [products]);
+    if (!hydrated || hasReconciled.current) return;
+    hasReconciled.current = true;
+    const removed = reconcile(products.map((p) => p.id));
+    if (removed.length > 0) setRemovedItems(removed);
+  }, [hydrated, cart, products, reconcile]);
 
   return (
     <>
-      {deactivatedNames.length > 0 && (
+      {removedItems.length > 0 && (
         <div className="mb-4 rounded-xl bg-amber-100 border border-amber-300 px-4 py-3 text-sm text-amber-800">
           Some items in your cart are no longer available and were removed.
           <button
             className="ml-2 underline font-medium"
-            onClick={() => setDeactivatedNames([])}
+            onClick={() => setRemovedItems([])}
           >
             Dismiss
           </button>
