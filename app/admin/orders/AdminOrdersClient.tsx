@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { FulfillmentType, OrderStatus, PaymentMethod } from "@prisma/client";
 import Link from "next/link";
 import { trpc } from "../../../lib/trpc/react";
+import { nextStatuses } from "../../../lib/order-lifecycle";
 
 type OrderWithItems = {
   id: string;
@@ -49,19 +50,12 @@ const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   check: "Check on Delivery",
 };
 
-function nextActions(
-  status: OrderStatus,
-  fulfillmentType: FulfillmentType
-): { label: string; next: "confirmed" | "ready" | "shipped" | "delivered" }[] {
-  if (status === "received") return [{ label: "Mark as Confirmed", next: "confirmed" }];
-  if (status === "confirmed") return [{ label: "Mark as Ready", next: "ready" }];
-  if (status === "ready") {
-    return fulfillmentType === "local_delivery"
-      ? [{ label: "Mark as Delivered", next: "delivered" }]
-      : [{ label: "Mark as Shipped", next: "shipped" }];
-  }
-  return [];
-}
+const ADVANCE_LABELS: Partial<Record<OrderStatus, string>> = {
+  confirmed: "Mark as Confirmed",
+  ready: "Mark as Ready",
+  shipped: "Mark as Shipped",
+  delivered: "Mark as Delivered",
+};
 
 function OrderRow({ order }: { order: OrderWithItems }) {
   const [expanded, setExpanded] = useState(false);
@@ -71,7 +65,7 @@ function OrderRow({ order }: { order: OrderWithItems }) {
     onSuccess: () => utils.orders.listAll.invalidate(),
   });
 
-  const actions = nextActions(order.status, order.fulfillmentType);
+  const actions = nextStatuses(order);
   const ref = order.id.slice(0, 8).toUpperCase();
   const date = new Date(order.createdAt).toLocaleDateString("en-US", {
     month: "short",
@@ -161,16 +155,16 @@ function OrderRow({ order }: { order: OrderWithItems }) {
           {/* Actions */}
           {actions.length > 0 && (
             <div className="space-y-2 pt-1">
-              {actions.map((action) => (
+              {actions.map((next) => (
                 <button
-                  key={action.next}
+                  key={next}
                   onClick={() =>
-                    updateStatus.mutate({ id: order.id, status: action.next })
+                    updateStatus.mutate({ id: order.id, status: next as Exclude<OrderStatus, "received"> })
                   }
                   disabled={updateStatus.isPending}
                   className="w-full bg-amber-800 text-white px-4 py-3 rounded-xl font-semibold text-sm hover:bg-amber-700 active:bg-amber-900 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {updateStatus.isPending ? "Updating..." : action.label}
+                  {updateStatus.isPending ? "Updating..." : ADVANCE_LABELS[next]}
                 </button>
               ))}
             </div>
