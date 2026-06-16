@@ -204,12 +204,20 @@ export function AdminOrdersClient() {
               </p>
             )}
           </div>
-          <Link
-            href="/admin/products"
-            className="border border-amber-200 text-amber-800 px-3 py-2 rounded-xl text-sm font-medium hover:bg-amber-50 transition-colors"
-          >
-            Products →
-          </Link>
+          <div className="flex gap-2">
+            <Link
+              href="/admin/users"
+              className="border border-amber-200 text-amber-800 px-3 py-2 rounded-xl text-sm font-medium hover:bg-amber-50 transition-colors"
+            >
+              Customers →
+            </Link>
+            <Link
+              href="/admin/products"
+              className="border border-amber-200 text-amber-800 px-3 py-2 rounded-xl text-sm font-medium hover:bg-amber-50 transition-colors"
+            >
+              Products →
+            </Link>
+          </div>
         </div>
 
         {isLoading && (

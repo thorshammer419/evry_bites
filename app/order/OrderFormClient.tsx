@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { Product } from "@prisma/client";
 import { PayPalScriptProvider, PayPalButtons } from "@paypal/react-paypal-js";
+import { useUser, SignInButton, SignUpButton, UserButton } from "@clerk/nextjs";
 import { CartProvider, useCart } from "../../lib/cart";
 import { trpc } from "../../lib/trpc/react";
 
@@ -55,6 +56,10 @@ function OrderFormInner({ products }: OrderFormClientProps) {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("venmo");
   const [notes, setNotes] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
+
+  const { user, isLoaded: clerkLoaded, isSignedIn } = useUser();
+  const isCashCheck = paymentMethod === "cash" || paymentMethod === "check";
+  const cashCheckApproved = Boolean(isSignedIn && user?.publicMetadata?.cashCheckApproved);
 
   const pendingOrderRef = useRef<{ orderId: string; paypalOrderId: string } | null>(null);
 
@@ -109,6 +114,8 @@ function OrderFormInner({ products }: OrderFormClientProps) {
     if (!city.trim()) { setFormError("Please enter your city."); return false; }
     if (!zip.trim() || !/^\d{5}$/.test(zip.trim())) { setFormError("Please enter a valid 5-digit ZIP code."); return false; }
     if (lineItems.length === 0) { setFormError("Your cart is empty."); return false; }
+    if (isCashCheck && !isSignedIn) { setFormError("Please sign in or create an account to use Cash/Check on delivery."); return false; }
+    if (isCashCheck && !cashCheckApproved) { setFormError("Your account is pending admin approval for Cash/Check payments."); return false; }
     return true;
   }
 
@@ -273,9 +280,51 @@ function OrderFormInner({ products }: OrderFormClientProps) {
                     checked={paymentMethod === option.value}
                     onChange={() => setPaymentMethod(option.value)} className="accent-amber-800" />
                   <span className="font-semibold text-amber-900">{option.label}</span>
+                  {(option.value === "cash" || option.value === "check") && (
+                    <span className="ml-auto text-xs text-amber-500">Account required</span>
+                  )}
                 </label>
               ))}
             </div>
+
+            {isCashCheck && clerkLoaded && !isSignedIn && (
+              <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 space-y-3">
+                <p className="text-sm text-amber-800">
+                  Cash/Check on delivery requires an account. Admin approval is needed before your first order.
+                </p>
+                <div className="flex gap-3">
+                  <SignInButton mode="modal">
+                    <button type="button" className="flex-1 border border-amber-800 text-amber-800 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-amber-100 transition-colors">
+                      Sign In
+                    </button>
+                  </SignInButton>
+                  <SignUpButton mode="modal">
+                    <button type="button" className="flex-1 bg-amber-800 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-amber-700 transition-colors">
+                      Create Account
+                    </button>
+                  </SignUpButton>
+                </div>
+              </div>
+            )}
+
+            {isCashCheck && isSignedIn && !cashCheckApproved && (
+              <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
+                <p className="text-sm text-amber-800">
+                  Your account is pending admin approval for Cash/Check payments. You&apos;ll be notified once approved.
+                </p>
+                <div className="mt-2 flex items-center gap-2">
+                  <UserButton />
+                  <span className="text-xs text-amber-600">Signed in as {user?.primaryEmailAddress?.emailAddress}</span>
+                </div>
+              </div>
+            )}
+
+            {isCashCheck && isSignedIn && cashCheckApproved && (
+              <div className="mt-4 flex items-center gap-2">
+                <UserButton />
+                <span className="text-xs text-amber-600">Signed in as {user?.primaryEmailAddress?.emailAddress}</span>
+              </div>
+            )}
           </section>
 
           {/* Notes */}
@@ -346,8 +395,11 @@ function OrderFormInner({ products }: OrderFormClientProps) {
               onError={() => setFormError("Something went wrong with PayPal. Please try again.")}
             />
           ) : (
-            <button type="submit" disabled={submitMutation.isPending}
-              className="w-full bg-amber-800 text-white px-4 py-3 rounded-xl font-semibold hover:bg-amber-700 active:bg-amber-900 transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+            <button
+              type="submit"
+              disabled={submitMutation.isPending || (isCashCheck && (!isSignedIn || !cashCheckApproved))}
+              className="w-full bg-amber-800 text-white px-4 py-3 rounded-xl font-semibold hover:bg-amber-700 active:bg-amber-900 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+            >
               {submitMutation.isPending ? "Placing Order..." : "Place Order"}
             </button>
           )}
