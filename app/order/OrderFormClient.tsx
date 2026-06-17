@@ -6,6 +6,7 @@ import Link from "next/link";
 import type { Product } from "@prisma/client";
 import { PayPalScriptProvider, PayPalButtons } from "@paypal/react-paypal-js";
 import { useUser, SignInButton, SignUpButton, UserButton } from "@clerk/nextjs";
+import { CustomerHeader } from "../components/CustomerHeader";
 import { CartProvider, useCart } from "../../lib/cart";
 import { trpc } from "../../lib/trpc/react";
 
@@ -150,16 +151,7 @@ function OrderFormInner({ products }: OrderFormClientProps) {
 
   return (
     <div className="min-h-screen bg-amber-50">
-      <header className="bg-white border-b border-amber-100 sticky top-0 z-10">
-        <div className="max-w-2xl mx-auto px-4 py-4 flex items-center gap-3">
-          <Link href="/" className="text-amber-600 hover:text-amber-800 mr-1">←</Link>
-          <span className="text-3xl">🧁</span>
-          <div>
-            <h1 className="text-xl font-bold text-amber-900 leading-none">Place Your Order</h1>
-            <p className="text-xs text-amber-600">EvryBites</p>
-          </div>
-        </div>
-      </header>
+      <CustomerHeader title="Place Your Order" subtitle="EvryBites" backHref="/" />
 
       <main className="max-w-2xl mx-auto px-4 py-6 pb-12">
         {removedItems.length > 0 && (

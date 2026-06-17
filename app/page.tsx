@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { MenuClient } from "./components/MenuClient";
+import { CustomerHeader } from "./components/CustomerHeader";
 import { appRouter } from "../server/routers/_app";
 import { createCallerFactory } from "../server/trpc";
 import { NullNotifier } from "../lib/null-notifier";
@@ -13,17 +14,7 @@ export default async function Home() {
 
   return (
     <div className="min-h-screen bg-amber-50">
-      <header className="bg-white border-b border-amber-100 sticky top-0 z-10">
-        <div className="max-w-2xl mx-auto px-4 py-4 flex items-center gap-3">
-          <span className="text-3xl">🧁</span>
-          <div>
-            <h1 className="text-xl font-bold text-amber-900 leading-none">
-              EvryBites
-            </h1>
-            <p className="text-xs text-amber-600">Fresh baked to order</p>
-          </div>
-        </div>
-      </header>
+      <CustomerHeader />
 
       <main className="max-w-2xl mx-auto px-4 py-6">
         <p className="text-sm text-amber-700 mb-6">

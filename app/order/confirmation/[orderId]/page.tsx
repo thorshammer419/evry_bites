@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { FulfillmentType, PaymentMethod } from "@prisma/client";
 import { db } from "../../../../lib/db";
+import { CustomerHeader } from "../../../components/CustomerHeader";
 
 interface ConfirmationPageProps {
   params: Promise<{ orderId: string }>;
@@ -39,17 +40,7 @@ export default async function OrderConfirmationPage({
 
   return (
     <div className="min-h-screen bg-amber-50">
-      <header className="bg-white border-b border-amber-100 sticky top-0 z-10">
-        <div className="max-w-2xl mx-auto px-4 py-4 flex items-center gap-3">
-          <span className="text-3xl">🧁</span>
-          <div>
-            <h1 className="text-xl font-bold text-amber-900 leading-none">
-              Order Confirmed!
-            </h1>
-            <p className="text-xs text-amber-600">EvryBites</p>
-          </div>
-        </div>
-      </header>
+      <CustomerHeader title="Order Confirmed!" subtitle="EvryBites" />
 
       <main className="max-w-2xl mx-auto px-4 py-6 pb-12 space-y-6">
         {/* Success Banner */}
