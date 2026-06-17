@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useUser, UserButton, SignInButton } from "@clerk/nextjs";
 
@@ -10,29 +11,26 @@ interface CustomerHeaderProps {
 }
 
 export function CustomerHeader({
-  title = "EvryBites",
+  title = "Ev'ry Bites",
   subtitle = "Fresh baked to order",
   backHref,
 }: CustomerHeaderProps) {
   const { isSignedIn, isLoaded } = useUser();
 
   return (
-    <header className="bg-white border-b border-amber-100 sticky top-0 z-10">
+    <header className="bg-white border-b-4 border-blue-900 sticky top-0 z-10">
       <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
         {backHref && (
-          <Link
-            href={backHref}
-            className="text-amber-600 hover:text-amber-800 mr-1 text-lg leading-none"
-          >
-            ←
+          <Link href={backHref} className="shrink-0 mr-1" aria-label="Go back">
+            <Image src="/back-button.png" alt="Back" width={80} height={44} className="h-9 w-auto" />
           </Link>
         )}
-        <span className="text-3xl">🧁</span>
+        <Image src="/logo.png" alt="Ev'ry Bites Bakery" width={48} height={48} className="shrink-0" />
         <div className="flex-1 min-w-0">
-          <h1 className="text-xl font-bold text-amber-900 leading-none truncate">
+          <h1 className="text-xl font-bold text-blue-900 leading-none truncate">
             {title}
           </h1>
-          <p className="text-xs text-amber-600">{subtitle}</p>
+          <p className="text-xs text-sky-600">{subtitle}</p>
         </div>
         {isLoaded && (
           <div className="flex items-center gap-2 shrink-0">
@@ -40,7 +38,7 @@ export function CustomerHeader({
               <UserButton />
             ) : (
               <SignInButton mode="modal">
-                <button className="text-sm text-amber-700 hover:text-amber-900 font-medium px-3 py-1.5 rounded-lg border border-amber-200 hover:bg-amber-50 transition-colors">
+                <button className="text-sm text-blue-700 hover:text-purple-800 font-medium px-3 py-1.5 rounded-lg border border-sky-200 hover:bg-sky-50 transition-colors">
                   Sign in
                 </button>
               </SignInButton>

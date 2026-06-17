@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { setOptions, importLibrary } from "@googlemaps/js-api-loader";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import Link from "next/link";
 import type { Product } from "@prisma/client";
 import { PayPalScriptProvider, PayPalButtons } from "@paypal/react-paypal-js";
@@ -185,9 +186,9 @@ function OrderFormInner({ products }: OrderFormClientProps) {
     },
   });
 
-  const inputClass = "w-full rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900 focus:outline-none focus:ring-2 focus:ring-amber-400";
-  const labelClass = "block text-sm font-medium text-amber-800 mb-1";
-  const sectionHeaderClass = "text-sm font-semibold text-amber-900 uppercase tracking-wide mb-3";
+  const inputClass = "w-full rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-blue-900 focus:outline-none focus:ring-2 focus:ring-sky-400";
+  const labelClass = "block text-sm font-medium text-blue-800 mb-1";
+  const sectionHeaderClass = "text-sm font-semibold text-blue-900 uppercase tracking-wide mb-3";
 
   function collectFormData() {
     return {
@@ -233,18 +234,18 @@ function OrderFormInner({ products }: OrderFormClientProps) {
 
   if (lineItems.length === 0) {
     return (
-      <div className="min-h-screen bg-amber-50 flex items-center justify-center px-4">
+      <div className="min-h-screen bg-bakery-pattern flex items-center justify-center px-4">
         <div className="text-center">
           {removedItems.length > 0 && (
-            <p className="text-sm text-amber-700 bg-amber-100 border border-amber-300 rounded-xl px-4 py-3 mb-6">
+            <p className="text-sm text-blue-700 bg-sky-100 border border-sky-300 rounded-xl px-4 py-3 mb-6">
               Some items in your cart are no longer available and were removed.
             </p>
           )}
           <p className="text-5xl mb-4">🛒</p>
-          <p className="text-amber-800 font-medium text-lg mb-2">Your cart is empty.</p>
-          <p className="text-amber-600 text-sm mb-6">Go back to the menu to add items.</p>
-          <Link href="/" className="bg-amber-800 text-white px-6 py-3 rounded-xl font-semibold hover:bg-amber-700 transition-colors">
-            ← Back to Menu
+          <p className="text-blue-800 font-medium text-lg mb-2">Your cart is empty.</p>
+          <p className="text-sky-600 text-sm mb-6">Go back to the menu to add items.</p>
+          <Link href="/" aria-label="Back to Menu">
+            <Image src="/back-button.png" alt="Back to Menu" width={120} height={66} className="h-14 w-auto inline-block" />
           </Link>
         </div>
       </div>
@@ -266,12 +267,12 @@ function OrderFormInner({ products }: OrderFormClientProps) {
       (city.trim().toLowerCase() === "rapid city" && state === "SD"));
 
   return (
-    <div className="min-h-screen bg-amber-50">
-      <CustomerHeader title="Place Your Order" subtitle="EvryBites" backHref="/" />
+    <div className="min-h-screen bg-bakery-pattern">
+      <CustomerHeader title="Place Your Order" subtitle="Ev'ry Bites" backHref="/" />
 
       <main className="max-w-2xl mx-auto px-4 py-6 pb-12">
         {removedItems.length > 0 && (
-          <div className="mb-4 rounded-xl bg-amber-100 border border-amber-300 px-4 py-3 text-sm text-amber-800">
+          <div className="mb-4 rounded-xl bg-sky-100 border border-sky-300 px-4 py-3 text-sm text-blue-800">
             Some items in your cart are no longer available and were removed.
             <button className="ml-2 underline font-medium" onClick={() => setRemovedItems([])}>Dismiss</button>
           </div>
@@ -279,7 +280,7 @@ function OrderFormInner({ products }: OrderFormClientProps) {
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Contact Information */}
-          <section className="bg-white rounded-3xl shadow-sm border border-amber-100 p-4">
+          <section className="bg-white rounded-3xl shadow-sm border border-sky-100 p-4">
             <h2 className={sectionHeaderClass}>Contact Information</h2>
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
@@ -313,7 +314,7 @@ function OrderFormInner({ products }: OrderFormClientProps) {
           </section>
 
           {/* Fulfillment */}
-          <section className="bg-white rounded-3xl shadow-sm border border-amber-100 p-4">
+          <section className="bg-white rounded-3xl shadow-sm border border-sky-100 p-4">
             <h2 className={sectionHeaderClass}>Fulfillment</h2>
             <div className="space-y-3 mb-4">
               {([
@@ -321,7 +322,7 @@ function OrderFormInner({ products }: OrderFormClientProps) {
                 { value: "shipping", label: "Shipping", desc: "Shipped to your address" },
               ] as { value: FulfillmentType; label: string; desc: string }[]).map((option) => (
                 <label key={option.value} className={`flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition-colors ${
-                  fulfillmentType === option.value ? "border-amber-800 bg-amber-50" : "border-amber-100 bg-white hover:border-amber-200"}`}>
+                  fulfillmentType === option.value ? "border-purple-800 bg-sky-50" : "border-sky-100 bg-white hover:border-sky-200"}`}>
                   <input type="radio" name="fulfillmentType" value={option.value}
                     checked={fulfillmentType === option.value}
                     onChange={() => {
@@ -329,17 +330,17 @@ function OrderFormInner({ products }: OrderFormClientProps) {
                       if (option.value === "shipping" && paymentMethod === "cash") {
                         setPaymentMethod("paypal");
                       }
-                    }} className="mt-0.5 accent-amber-800" />
+                    }} className="mt-0.5 accent-purple-800" />
                   <div>
-                    <p className="font-semibold text-amber-900">{option.label}</p>
-                    <p className="text-xs text-amber-600">{option.desc}</p>
+                    <p className="font-semibold text-blue-900">{option.label}</p>
+                    <p className="text-xs text-sky-600">{option.desc}</p>
                   </div>
                 </label>
               ))}
             </div>
 
             {fulfillmentType === "local_delivery" && (
-              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-4">
+              <p className="text-xs text-blue-700 bg-sky-50 border border-sky-200 rounded-xl px-3 py-2 mb-4">
                 Local delivery is available within the Rapid City, SD area
               </p>
             )}
@@ -378,7 +379,7 @@ function OrderFormInner({ products }: OrderFormClientProps) {
           </section>
 
           {/* Payment */}
-          <section className="bg-white rounded-3xl shadow-sm border border-amber-100 p-4">
+          <section className="bg-white rounded-3xl shadow-sm border border-sky-100 p-4">
             <h2 className={sectionHeaderClass}>Payment Method</h2>
             <div className="space-y-3">
               {([
@@ -387,31 +388,31 @@ function OrderFormInner({ products }: OrderFormClientProps) {
                 ...(fulfillmentType === "local_delivery" ? [{ value: "cash" as PaymentMethod, label: "Cash or Check on Delivery" }] : []),
               ] as { value: PaymentMethod; label: string }[]).map((option) => (
                 <label key={option.value} className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-colors ${
-                  paymentMethod === option.value ? "border-amber-800 bg-amber-50" : "border-amber-100 bg-white hover:border-amber-200"}`}>
+                  paymentMethod === option.value ? "border-purple-800 bg-sky-50" : "border-sky-100 bg-white hover:border-sky-200"}`}>
                   <input type="radio" name="paymentMethod" value={option.value}
                     checked={paymentMethod === option.value}
-                    onChange={() => setPaymentMethod(option.value)} className="accent-amber-800" />
-                  <span className="font-semibold text-amber-900">{option.label}</span>
+                    onChange={() => setPaymentMethod(option.value)} className="accent-purple-800" />
+                  <span className="font-semibold text-blue-900">{option.label}</span>
                   {option.value === "cash" && (
-                    <span className="ml-auto text-xs text-amber-500">Account required</span>
+                    <span className="ml-auto text-xs text-sky-500">Account required</span>
                   )}
                 </label>
               ))}
             </div>
 
             {isCashCheck && clerkLoaded && !isSignedIn && (
-              <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 space-y-3">
-                <p className="text-sm text-amber-800">
+              <div className="mt-4 rounded-xl bg-sky-50 border border-sky-200 px-4 py-3 space-y-3">
+                <p className="text-sm text-blue-800">
                   Cash/Check on delivery requires an account. Admin approval is needed before your first order.
                 </p>
                 <div className="flex gap-3">
                   <SignInButton mode="modal">
-                    <button type="button" className="flex-1 border border-amber-800 text-amber-800 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-amber-100 transition-colors">
+                    <button type="button" className="flex-1 border border-purple-800 text-blue-800 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-sky-100 transition-colors">
                       Sign In
                     </button>
                   </SignInButton>
                   <SignUpButton mode="modal">
-                    <button type="button" className="flex-1 bg-amber-800 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-amber-700 transition-colors">
+                    <button type="button" className="flex-1 bg-purple-800 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-purple-700 transition-colors">
                       Create Account
                     </button>
                   </SignUpButton>
@@ -420,18 +421,18 @@ function OrderFormInner({ products }: OrderFormClientProps) {
             )}
 
             {isCashCheck && isSignedIn && !cashCheckApproved && (
-              <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
+              <div className="mt-4 rounded-xl bg-sky-50 border border-sky-200 px-4 py-3">
                 <div className="flex items-center gap-2 mb-2">
                   <UserButton />
-                  <span className="text-xs text-amber-600">Signed in as {user?.primaryEmailAddress?.emailAddress}</span>
+                  <span className="text-xs text-sky-600">Signed in as {user?.primaryEmailAddress?.emailAddress}</span>
                 </div>
                 {cashCheckPending || approvalRequested ? (
-                  <p className="text-sm text-amber-700 font-medium">
+                  <p className="text-sm text-blue-700 font-medium">
                     Approval Request Pending
                   </p>
                 ) : (
                   <>
-                    <p className="text-sm text-amber-800 mb-2">
+                    <p className="text-sm text-blue-800 mb-2">
                       Cash/Check payments require admin approval. Request access below.
                     </p>
                     <button
@@ -442,7 +443,7 @@ function OrderFormInner({ products }: OrderFormClientProps) {
                         const email = user?.primaryEmailAddress?.emailAddress ?? "";
                         requestApprovalMutation.mutate({ userId: user!.id, customerName: name, customerEmail: email });
                       }}
-                      className="text-sm bg-amber-800 text-white px-4 py-2 rounded-xl font-semibold hover:bg-amber-700 disabled:opacity-60 transition-colors"
+                      className="text-sm bg-purple-800 text-white px-4 py-2 rounded-xl font-semibold hover:bg-purple-700 disabled:opacity-60 transition-colors"
                     >
                       {requestApprovalMutation.isPending ? "Sending..." : "Request Approval"}
                     </button>
@@ -454,13 +455,13 @@ function OrderFormInner({ products }: OrderFormClientProps) {
             {isCashCheck && isSignedIn && cashCheckApproved && (
               <div className="mt-4 flex items-center gap-2">
                 <UserButton />
-                <span className="text-xs text-amber-600">Signed in as {user?.primaryEmailAddress?.emailAddress}</span>
+                <span className="text-xs text-sky-600">Signed in as {user?.primaryEmailAddress?.emailAddress}</span>
               </div>
             )}
           </section>
 
           {/* Notes */}
-          <section className="bg-white rounded-3xl shadow-sm border border-amber-100 p-4">
+          <section className="bg-white rounded-3xl shadow-sm border border-sky-100 p-4">
             <h2 className={sectionHeaderClass}>Order Notes (Optional)</h2>
             <textarea value={notes} onChange={(e) => setNotes(e.target.value)}
               className={`${inputClass} min-h-[100px] resize-y`}
@@ -468,10 +469,10 @@ function OrderFormInner({ products }: OrderFormClientProps) {
           </section>
 
           {/* Order Review */}
-          <section className="bg-white rounded-3xl shadow-sm border border-amber-100 p-4">
-            <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl">
-              <p className="text-sm font-bold text-amber-900 mb-1">DISCLAIMER:</p>
-              <p className="text-xs text-amber-800 leading-relaxed">
+          <section className="bg-white rounded-3xl shadow-sm border border-sky-100 p-4">
+            <div className="mb-4 p-3 bg-sky-50 border border-sky-200 rounded-xl">
+              <p className="text-sm font-bold text-blue-900 mb-1">DISCLAIMER:</p>
+              <p className="text-xs text-blue-800 leading-relaxed">
                 This product was not produced in a commercial kitchen. It has been home-processed
                 in a kitchen that may also process common food allergens such as tree nuts,
                 peanuts, eggs, soy, wheat, milk, fish, and crustacean shellfish.
@@ -482,20 +483,20 @@ function OrderFormInner({ products }: OrderFormClientProps) {
               {lineItems.map(({ product, quantity, subtotal }) => (
                 <div key={product.id} className="flex justify-between items-start">
                   <div>
-                    <p className="font-medium text-amber-900">{product.name}</p>
-                    <p className="text-xs text-amber-500">
+                    <p className="font-medium text-blue-900">{product.name}</p>
+                    <p className="text-xs text-sky-500">
                       {quantity} × {product.unitLabel} @ ${Number(product.price).toFixed(2)}
                     </p>
                   </div>
-                  <span className="font-semibold text-amber-900">${subtotal.toFixed(2)}</span>
+                  <span className="font-semibold text-blue-900">${subtotal.toFixed(2)}</span>
                 </div>
               ))}
             </div>
-            <div className="border-t border-amber-100 pt-3 flex justify-between items-center">
-              <span className="font-semibold text-amber-900">Total</span>
-              <span className="text-xl font-bold text-amber-900">${grandTotal.toFixed(2)}</span>
+            <div className="border-t border-sky-100 pt-3 flex justify-between items-center">
+              <span className="font-semibold text-blue-900">Total</span>
+              <span className="text-xl font-bold text-blue-900">${grandTotal.toFixed(2)}</span>
             </div>
-            <div className="mt-4 pt-4 border-t border-amber-100 space-y-1 text-sm text-amber-700">
+            <div className="mt-4 pt-4 border-t border-sky-100 space-y-1 text-sm text-blue-700">
               <p>
                 <span className="font-medium">Fulfillment:</span>{" "}
                 {fulfillmentType === "local_delivery" ? "Local Delivery" : "Shipping"}
@@ -557,7 +558,7 @@ function OrderFormInner({ products }: OrderFormClientProps) {
             <button
               type="submit"
               disabled={submitMutation.isPending || (isCashCheck && (!isSignedIn || !cashCheckApproved))}
-              className="w-full bg-amber-800 text-white px-4 py-3 rounded-xl font-semibold hover:bg-amber-700 active:bg-amber-900 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              className="w-full bg-purple-800 text-white px-4 py-3 rounded-xl font-semibold hover:bg-purple-700 active:bg-purple-900 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {submitMutation.isPending ? "Placing Order..." : "Place Order"}
             </button>

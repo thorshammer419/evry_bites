@@ -29,8 +29,8 @@ export function ProductCard({ product }: ProductCardProps) {
 
   return (
     <>
-      <div className="bg-white rounded-3xl shadow-sm border border-amber-100 overflow-hidden flex flex-col">
-        <div className="h-48 bg-amber-50 overflow-hidden relative">
+      <div className="bg-white rounded-3xl shadow-sm border border-sky-100 overflow-hidden flex flex-col">
+        <div className="h-48 bg-sky-50 overflow-hidden relative">
           {product.imageUrl ? (
             <Image
               src={product.imageUrl}
@@ -55,10 +55,10 @@ export function ProductCard({ product }: ProductCardProps) {
 
         <div className="p-4 flex flex-col flex-1 gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-amber-900">
+            <h2 className="text-lg font-semibold text-blue-900">
               {product.name}
             </h2>
-            <p className="text-sm text-amber-700 mt-1 leading-relaxed">
+            <p className="text-sm text-blue-700 mt-1 leading-relaxed">
               {product.description}
             </p>
           </div>
@@ -66,10 +66,10 @@ export function ProductCard({ product }: ProductCardProps) {
           <div className="mt-auto flex flex-col gap-1">
             <div className="flex items-center justify-between">
               <div>
-                <span className="text-lg font-bold text-amber-900">
+                <span className="text-lg font-bold text-blue-900">
                   ${price.toFixed(2)}
                 </span>
-                <span className="text-xs text-amber-600 ml-1">
+                <span className="text-xs text-sky-600 ml-1">
                   / {product.unitLabel}
                 </span>
               </div>
@@ -77,18 +77,18 @@ export function ProductCard({ product }: ProductCardProps) {
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setQuantity(product.id, quantity - 1)}
-                  className="w-8 h-8 rounded-full bg-amber-100 text-amber-800 font-bold text-lg flex items-center justify-center hover:bg-amber-200 active:bg-amber-300 transition-colors disabled:opacity-30"
+                  className="w-8 h-8 rounded-full bg-sky-100 text-blue-800 font-bold text-lg flex items-center justify-center hover:bg-sky-200 active:bg-sky-200 transition-colors disabled:opacity-30"
                   aria-label="Decrease quantity"
                   disabled={quantity === 0 || soldOut}
                 >
                   −
                 </button>
-                <span className="w-6 text-center font-semibold text-amber-900">
+                <span className="w-6 text-center font-semibold text-blue-900">
                   {quantity}
                 </span>
                 <button
                   onClick={soldOut ? undefined : handlePlusClick}
-                  className="w-8 h-8 rounded-full bg-amber-800 text-white font-bold text-lg flex items-center justify-center hover:bg-amber-700 active:bg-amber-900 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="w-8 h-8 rounded-full bg-purple-800 text-white font-bold text-lg flex items-center justify-center hover:bg-purple-700 active:bg-purple-900 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   aria-label="Increase quantity"
                   disabled={soldOut}
                 >
@@ -98,21 +98,21 @@ export function ProductCard({ product }: ProductCardProps) {
             </div>
 
             {showMaxHint && (
-              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 text-right">
+              <p className="text-xs text-blue-700 bg-sky-50 border border-sky-200 rounded-lg px-2 py-1 text-right">
                 Only {product.unitsAvailable} {product.unitsAvailable === 1 ? "batch" : "batches"} available
               </p>
             )}
           </div>
 
           <div className="flex items-center justify-between">
-            <p className="text-xs text-amber-500">
+            <p className="text-xs text-sky-500">
               {product.batchSize}{" "}
               {product.batchSize === 1 ? "piece" : "pieces"} per {product.unitLabel}
             </p>
             {product.ingredients && (
               <button
                 onClick={() => setShowIngredients(true)}
-                className="flex items-center gap-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1 rounded-lg hover:bg-amber-100 transition-colors"
+                className="flex items-center gap-1 text-xs text-blue-700 bg-sky-50 border border-sky-200 px-2 py-1 rounded-lg hover:bg-sky-100 transition-colors"
               >
                 🧾 Ingredients
               </button>
@@ -131,17 +131,17 @@ export function ProductCard({ product }: ProductCardProps) {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-lg font-bold text-amber-900">Ingredients</h2>
+              <h2 className="text-lg font-bold text-blue-900">Ingredients</h2>
               <button
                 onClick={() => setShowIngredients(false)}
-                className="text-amber-400 hover:text-amber-700 text-xl leading-none"
+                className="text-sky-400 hover:text-blue-700 text-xl leading-none"
                 aria-label="Close"
               >
                 ×
               </button>
             </div>
-            <p className="text-sm font-semibold text-amber-800 mb-1">{product.name}</p>
-            <p className="text-sm text-amber-700 leading-relaxed">{product.ingredients}</p>
+            <p className="text-sm font-semibold text-blue-800 mb-1">{product.name}</p>
+            <p className="text-sm text-blue-700 leading-relaxed">{product.ingredients}</p>
           </div>
         </div>
       )}
