@@ -38,6 +38,7 @@ jobs:
           NEXT_PUBLIC_PAYPAL_CLIENT_ID: ${{ secrets.NEXT_PUBLIC_PAYPAL_CLIENT_ID }}
           NEXT_PUBLIC_VENMO_HANDLE: "@thorshammer419"
           NEXT_PUBLIC_PAYPAL_LINK: "paypal.me/markaerickson"
+          NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY }}
 
       - name: Assemble standalone bundle
         run: |

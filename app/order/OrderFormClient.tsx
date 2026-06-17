@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { setOptions, importLibrary } from "@googlemaps/js-api-loader";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { Product } from "@prisma/client";
@@ -62,6 +63,50 @@ function OrderFormInner({ products }: OrderFormClientProps) {
   const isCashCheck = paymentMethod === "cash" || paymentMethod === "check";
   const cashCheckApproved = Boolean(isSignedIn && user?.publicMetadata?.cashCheckApproved);
   const cashCheckPending = Boolean(isSignedIn && !cashCheckApproved && user?.unsafeMetadata?.cashCheckPending);
+
+  const addressInputRef = useRef<HTMLInputElement>(null);
+
+  const handlePlaceSelected = useCallback((components: google.maps.GeocoderAddressComponent[]) => {
+    let streetNumber = "", route = "", newCity = "", newState = "", newZip = "";
+    for (const c of components) {
+      const t = c.types[0];
+      if (t === "street_number") streetNumber = c.long_name;
+      else if (t === "route") route = c.short_name;
+      else if (t === "locality") newCity = c.long_name;
+      else if (t === "administrative_area_level_1") newState = c.short_name;
+      else if (t === "postal_code") newZip = c.long_name;
+    }
+    if (streetNumber && route) setAddressLine1(`${streetNumber} ${route}`);
+    if (newCity) setCity(newCity);
+    if (newState) setState(newState);
+    if (newZip) setZip(newZip);
+    if (newCity && newState) {
+      const isRapidCity = newCity.trim().toLowerCase() === "rapid city" && newState === "SD";
+      setFulfillmentType(isRapidCity ? "local_delivery" : "shipping");
+      if (!isRapidCity && (paymentMethod === "cash")) setPaymentMethod("paypal");
+    }
+  }, [paymentMethod]);
+
+  useEffect(() => {
+    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+    if (!apiKey || !addressInputRef.current) return;
+    let ac: google.maps.places.Autocomplete;
+    setOptions({ key: apiKey });
+    importLibrary("places").then((lib) => {
+      if (!addressInputRef.current) return;
+      const { Autocomplete } = lib as google.maps.PlacesLibrary;
+      ac = new Autocomplete(addressInputRef.current, {
+        types: ["address"],
+        componentRestrictions: { country: "us" },
+        fields: ["address_components"],
+      });
+      ac.addListener("place_changed", () => {
+        const place = ac.getPlace();
+        if (place.address_components) handlePlaceSelected(place.address_components);
+      });
+    });
+    return () => { if (ac) google.maps.event.clearInstanceListeners(ac); };
+  }, [handlePlaceSelected]);
 
   const hasAutoFilled = useRef(false);
   useEffect(() => {
@@ -304,9 +349,9 @@ function OrderFormInner({ products }: OrderFormClientProps) {
                 <label htmlFor="addressLine1" className={labelClass}>
                   {fulfillmentType === "local_delivery" ? "Delivery Address" : "Shipping Address"}
                 </label>
-                <input id="addressLine1" type="text" required value={addressLine1}
+                <input id="addressLine1" ref={addressInputRef} type="text" required value={addressLine1}
                   onChange={(e) => setAddressLine1(e.target.value)}
-                  className={inputClass} placeholder="123 Main St" autoComplete="address-line1" />
+                  className={inputClass} placeholder="Start typing your address…" autoComplete="new-password" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
