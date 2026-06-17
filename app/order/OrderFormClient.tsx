@@ -85,6 +85,11 @@ function OrderFormInner({ products }: OrderFormClientProps) {
     onError: () => setFormError("Payment capture failed. Please try again."),
   });
 
+  const [approvalRequested, setApprovalRequested] = useState(false);
+  const requestApprovalMutation = trpc.orders.requestCashCheckApproval.useMutation({
+    onSuccess: () => setApprovalRequested(true),
+  });
+
   const inputClass = "w-full rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900 focus:outline-none focus:ring-2 focus:ring-amber-400";
   const labelClass = "block text-sm font-medium text-amber-800 mb-1";
   const sectionHeaderClass = "text-sm font-semibold text-amber-900 uppercase tracking-wide mb-3";
@@ -301,13 +306,33 @@ function OrderFormInner({ products }: OrderFormClientProps) {
 
             {isCashCheck && isSignedIn && !cashCheckApproved && (
               <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
-                <p className="text-sm text-amber-800">
-                  Your account is pending admin approval for Cash/Check payments. You&apos;ll be notified once approved.
-                </p>
-                <div className="mt-2 flex items-center gap-2">
+                <div className="flex items-center gap-2 mb-2">
                   <UserButton />
                   <span className="text-xs text-amber-600">Signed in as {user?.primaryEmailAddress?.emailAddress}</span>
                 </div>
+                {approvalRequested ? (
+                  <p className="text-sm text-green-700 font-medium">
+                    Approval request sent! You&apos;ll be notified once approved.
+                  </p>
+                ) : (
+                  <>
+                    <p className="text-sm text-amber-800 mb-2">
+                      Cash/Check payments require admin approval. Request access below.
+                    </p>
+                    <button
+                      type="button"
+                      disabled={requestApprovalMutation.isPending}
+                      onClick={() => {
+                        const name = [user?.firstName, user?.lastName].filter(Boolean).join(" ") || "Customer";
+                        const email = user?.primaryEmailAddress?.emailAddress ?? "";
+                        requestApprovalMutation.mutate({ userId: user!.id, customerName: name, customerEmail: email });
+                      }}
+                      className="text-sm bg-amber-800 text-white px-4 py-2 rounded-xl font-semibold hover:bg-amber-700 disabled:opacity-60 transition-colors"
+                    >
+                      {requestApprovalMutation.isPending ? "Sending..." : "Request Approval"}
+                    </button>
+                  </>
+                )}
               </div>
             )}
 

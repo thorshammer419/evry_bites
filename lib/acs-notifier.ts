@@ -73,6 +73,8 @@ export class AcsNotifier implements Notifier {
 
     if (event.type === "order.received") {
       await this.sendOrderReceived(event.order, connectionString);
+    } else if (event.type === "user.cash_check_requested") {
+      await this.sendCashCheckRequest(event.request, connectionString);
     } else {
       await this.sendStatusChanged(event.order, event.newStatus, connectionString);
     }
@@ -141,6 +143,44 @@ export class AcsNotifier implements Notifier {
         console.error(`[notifications] order-received channel ${i} failed:`, r.reason);
       }
     });
+  }
+
+  private async sendCashCheckRequest(
+    request: import("./notifier").CashCheckRequestForNotification,
+    connectionString: string
+  ): Promise<void> {
+    const fromEmail = process.env.ACS_FROM_EMAIL;
+    const ownerEmails = (process.env.OWNER_NOTIFICATION_EMAIL ?? "")
+      .split(",")
+      .map((e) => e.trim())
+      .filter(Boolean);
+
+    if (!fromEmail || ownerEmails.length === 0) return;
+
+    const subject = `EvryBites — Cash/Check Approval Request from ${request.customerName}`;
+    const body = [
+      `${request.customerName} (${request.customerEmail}) is requesting approval for Cash/Check payments.`,
+      "",
+      `Approve: ${request.approveUrl}`,
+      `Deny:    ${request.denyUrl}`,
+      "",
+      "These links expire in 72 hours.",
+    ].join("\n");
+
+    const { EmailClient } = await import("@azure/communication-email");
+    const result = await new EmailClient(connectionString).beginSend({
+      senderAddress: fromEmail,
+      recipients: { to: ownerEmails.map((address) => ({ address })) },
+      content: { subject, plainText: body },
+    }).catch((err: unknown) => {
+      console.error("[notifications] cash-check-request email failed:", err);
+    });
+
+    if (result && "pollUntilDone" in result) {
+      result.pollUntilDone().catch((err: unknown) =>
+        console.error("[notifications] cash-check-request poll failed:", err)
+      );
+    }
   }
 
   private async sendStatusChanged(

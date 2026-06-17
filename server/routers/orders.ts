@@ -255,4 +255,29 @@ export const ordersRouter = router({
 
       return order;
     }),
+
+  requestCashCheckApproval: publicProcedure
+    .input(z.object({
+      userId: z.string(),
+      customerName: z.string(),
+      customerEmail: z.string().email(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { createApprovalToken } = await import("../../lib/approval-token");
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://evrybites.com";
+      const token = await createApprovalToken(input.userId);
+      const approveUrl = `${baseUrl}/api/admin/cash-check?action=approve&token=${encodeURIComponent(token)}`;
+      const denyUrl = `${baseUrl}/api/admin/cash-check?action=deny&token=${encodeURIComponent(token)}`;
+
+      await ctx.notifier.notify({
+        type: "user.cash_check_requested",
+        request: {
+          userId: input.userId,
+          customerName: input.customerName,
+          customerEmail: input.customerEmail,
+          approveUrl,
+          denyUrl,
+        },
+      });
+    }),
 });
