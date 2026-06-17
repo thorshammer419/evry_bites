@@ -18,13 +18,14 @@ export function ProductCard({ product }: ProductCardProps) {
   return (
     <>
       <div className="bg-white rounded-3xl shadow-sm border border-amber-100 overflow-hidden flex flex-col">
-        <div className="relative h-48 bg-amber-50">
+        <div className="h-48 bg-amber-50 overflow-hidden">
           {product.imageUrl ? (
             <Image
               src={product.imageUrl}
               alt={product.name}
-              fill
-              className="object-cover"
+              width={600}
+              height={192}
+              className="w-full h-full object-cover"
             />
           ) : (
             <div className="flex h-full items-center justify-center text-5xl">
