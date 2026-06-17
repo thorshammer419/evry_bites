@@ -208,6 +208,18 @@ function OrderFormInner({ products }: OrderFormClientProps) {
 
   const isPayPalMethod = paymentMethod === "paypal" || paymentMethod === "venmo";
 
+  const isPaypalFormReady =
+    firstName.trim() !== "" &&
+    lastName.trim() !== "" &&
+    customerEmail.trim() !== "" &&
+    customerPhone.trim() !== "" &&
+    addressLine1.trim() !== "" &&
+    city.trim() !== "" &&
+    /^\d{5}$/.test(zip.trim()) &&
+    lineItems.length > 0 &&
+    (fulfillmentType !== "local_delivery" ||
+      (city.trim().toLowerCase() === "rapid city" && state === "SD"));
+
   return (
     <div className="min-h-screen bg-amber-50">
       <CustomerHeader title="Place Your Order" subtitle="EvryBites" backHref="/" />
@@ -461,6 +473,13 @@ function OrderFormInner({ products }: OrderFormClientProps) {
 
           {/* Submit / PayPal buttons */}
           {isPayPalMethod ? (
+            <div className="relative">
+              {!isPaypalFormReady && (
+                <div
+                  className="absolute inset-0 z-10 cursor-pointer"
+                  onClick={() => { setFormError(null); validate(); }}
+                />
+              )}
             <PayPalButtons
               style={{ layout: "vertical", label: "pay" }}
               fundingSource={paymentMethod === "venmo" ? "venmo" : undefined}
@@ -488,6 +507,7 @@ function OrderFormInner({ products }: OrderFormClientProps) {
                 }
               }}
             />
+            </div>
           ) : (
             <button
               type="submit"
