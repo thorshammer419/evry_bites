@@ -26,6 +26,7 @@ body {
 }
 
 .bg-bakery-pattern {
+  background-color: #dbeafe;
   background-image: url('/bg-pattern.png');
   background-repeat: repeat;
   background-size: 700px;
