@@ -66,6 +66,7 @@ function OrderFormInner({ products }: OrderFormClientProps) {
   useEffect(() => {
     if (!clerkLoaded || !user || hasAutoFilled.current) return;
     hasAutoFilled.current = true;
+
     if (user.firstName) setFirstName(user.firstName);
     if (user.lastName) setLastName(user.lastName);
     const email = user.primaryEmailAddress?.emailAddress;
@@ -76,7 +77,36 @@ function OrderFormInner({ products }: OrderFormClientProps) {
       const tenDigit = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
       setCustomerPhone(formatPhone(tenDigit));
     }
+
+    const addr = user.unsafeMetadata?.address as
+      | { addressLine1?: string; city?: string; state?: string; zip?: string }
+      | undefined;
+    if (addr) {
+      if (addr.addressLine1) setAddressLine1(addr.addressLine1);
+      if (addr.city) setCity(addr.city);
+      if (addr.state) setState(addr.state);
+      if (addr.zip) setZip(addr.zip);
+      if (addr.city && addr.state) {
+        const isRapidCity = addr.city.trim().toLowerCase() === "rapid city" && addr.state === "SD";
+        setFulfillmentType(isRapidCity ? "local_delivery" : "shipping");
+      }
+    }
   }, [clerkLoaded, user]);
+
+  async function saveAddressToClerk() {
+    if (!user) return;
+    user.update({
+      unsafeMetadata: {
+        ...user.unsafeMetadata,
+        address: {
+          addressLine1: addressLine1.trim(),
+          city: city.trim(),
+          state,
+          zip: zip.trim(),
+        },
+      },
+    }).catch(() => {});
+  }
 
   const pendingOrderRef = useRef<{ orderId: string; paypalOrderId: string } | null>(null);
 
@@ -91,13 +121,13 @@ function OrderFormInner({ products }: OrderFormClientProps) {
   const grandTotal = lineItems.reduce((sum, item) => sum + item.subtotal, 0);
 
   const submitMutation = trpc.orders.submit.useMutation({
-    onSuccess: (order) => { clearCart(); router.push(`/order/confirmation/${order.id}`); },
+    onSuccess: (order) => { saveAddressToClerk(); clearCart(); router.push(`/order/confirmation/${order.id}`); },
     onError: (error) => setFormError(error.message || "Something went wrong. Please try again."),
   });
 
   const createPaypalOrderMutation = trpc.orders.createPaypalOrder.useMutation();
   const capturePaypalOrderMutation = trpc.orders.capturePaypalOrder.useMutation({
-    onSuccess: (order) => { clearCart(); router.push(`/order/confirmation/${order.id}`); },
+    onSuccess: (order) => { saveAddressToClerk(); clearCart(); router.push(`/order/confirmation/${order.id}`); },
     onError: () => setFormError("Payment capture failed. Please try again."),
   });
 
@@ -135,6 +165,10 @@ function OrderFormInner({ products }: OrderFormClientProps) {
     if (!addressLine1.trim()) { setFormError("Please enter your address."); return false; }
     if (!city.trim()) { setFormError("Please enter your city."); return false; }
     if (!zip.trim() || !/^\d{5}$/.test(zip.trim())) { setFormError("Please enter a valid 5-digit ZIP code."); return false; }
+    if (fulfillmentType === "local_delivery" && (city.trim().toLowerCase() !== "rapid city" || state !== "SD")) {
+      setFormError("Local delivery is only available in Rapid City, SD. Please update your address or switch to Shipping.");
+      return false;
+    }
     if (lineItems.length === 0) { setFormError("Your cart is empty."); return false; }
     if (isCashCheck && !isSignedIn) { setFormError("Please sign in or create an account to use Cash/Check on delivery."); return false; }
     if (isCashCheck && !cashCheckApproved) { setFormError("Your account is pending admin approval for Cash/Check payments."); return false; }
