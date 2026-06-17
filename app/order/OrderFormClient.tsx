@@ -70,8 +70,12 @@ function OrderFormInner({ products }: OrderFormClientProps) {
     if (user.lastName) setLastName(user.lastName);
     const email = user.primaryEmailAddress?.emailAddress;
     if (email) setCustomerEmail(email);
-    const phone = user.phoneNumbers?.[0]?.phoneNumber ?? (user.publicMetadata?.phone as string | undefined);
-    if (phone) setCustomerPhone(formatPhone(phone));
+    const rawPhone = user.phoneNumbers?.[0]?.phoneNumber ?? (user.publicMetadata?.phone as string | undefined);
+    if (rawPhone) {
+      const digits = rawPhone.replace(/\D/g, "");
+      const tenDigit = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
+      setCustomerPhone(formatPhone(tenDigit));
+    }
   }, [clerkLoaded, user]);
 
   const pendingOrderRef = useRef<{ orderId: string; paypalOrderId: string } | null>(null);
