@@ -263,7 +263,12 @@ function OrderFormInner({ products }: OrderFormClientProps) {
                   fulfillmentType === option.value ? "border-amber-800 bg-amber-50" : "border-amber-100 bg-white hover:border-amber-200"}`}>
                   <input type="radio" name="fulfillmentType" value={option.value}
                     checked={fulfillmentType === option.value}
-                    onChange={() => setFulfillmentType(option.value)} className="mt-0.5 accent-amber-800" />
+                    onChange={() => {
+                      setFulfillmentType(option.value);
+                      if (option.value === "shipping" && paymentMethod === "cash") {
+                        setPaymentMethod("paypal");
+                      }
+                    }} className="mt-0.5 accent-amber-800" />
                   <div>
                     <p className="font-semibold text-amber-900">{option.label}</p>
                     <p className="text-xs text-amber-600">{option.desc}</p>
@@ -318,7 +323,7 @@ function OrderFormInner({ products }: OrderFormClientProps) {
               {([
                 { value: "venmo", label: "Venmo" },
                 { value: "paypal", label: "PayPal / Debit / Credit Card" },
-                { value: "cash", label: "Cash or Check on Delivery" },
+                ...(fulfillmentType === "local_delivery" ? [{ value: "cash" as PaymentMethod, label: "Cash or Check on Delivery" }] : []),
               ] as { value: PaymentMethod; label: string }[]).map((option) => (
                 <label key={option.value} className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-colors ${
                   paymentMethod === option.value ? "border-amber-800 bg-amber-50" : "border-amber-100 bg-white hover:border-amber-200"}`}>
@@ -326,7 +331,7 @@ function OrderFormInner({ products }: OrderFormClientProps) {
                     checked={paymentMethod === option.value}
                     onChange={() => setPaymentMethod(option.value)} className="accent-amber-800" />
                   <span className="font-semibold text-amber-900">{option.label}</span>
-                  {(option.value === "cash" || option.value === "check") && (
+                  {option.value === "cash" && (
                     <span className="ml-auto text-xs text-amber-500">Account required</span>
                   )}
                 </label>
