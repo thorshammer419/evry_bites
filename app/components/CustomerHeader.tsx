@@ -18,14 +18,20 @@ export function CustomerHeader({
   const { isSignedIn, isLoaded } = useUser();
 
   return (
-    <header className="bg-white border-b-4 border-blue-900 sticky top-0 z-10">
+    <header className="bg-white border-b-4 border-blue-900 sticky top-0 z-10 overflow-visible">
       <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
         {backHref && (
-          <Link href={backHref} className="shrink-0 mr-1" aria-label="Go back">
+          <Link href={backHref} className="shrink-0 mr-1 self-center" aria-label="Go back">
             <Image src="/back-button.png" alt="Back" width={80} height={44} className="h-9 w-auto" />
           </Link>
         )}
-        <Image src="/logo.png" alt="Ev'ry Bites Bakery" width={48} height={48} className="shrink-0" />
+        <Image
+          src="/logo.png"
+          alt="Ev'ry Bites Bakery"
+          width={88}
+          height={88}
+          className="shrink-0 self-start [filter:drop-shadow(5px_7px_6px_rgba(0,0,0,0.30))]"
+        />
         <div className="flex-1 min-w-0">
           <h1 className="text-xl font-bold text-blue-900 leading-none truncate">
             {title}
