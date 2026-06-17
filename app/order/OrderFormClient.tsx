@@ -268,7 +268,7 @@ function OrderFormInner({ products }: OrderFormClientProps) {
 
   return (
     <div className="min-h-screen bg-bakery-pattern">
-      <CustomerHeader title="Place Your Order" subtitle="Ev'ry Bites" backHref="/" />
+      <CustomerHeader backHref="/" showLogo={false} />
 
       <main className="max-w-2xl mx-auto px-4 py-6 pb-12">
         {removedItems.length > 0 && (

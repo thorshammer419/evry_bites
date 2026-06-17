@@ -8,36 +8,33 @@ interface CustomerHeaderProps {
   title?: string;
   subtitle?: string;
   backHref?: string;
+  showLogo?: boolean;
 }
 
 export function CustomerHeader({
-  title = "Ev'ry Bites",
-  subtitle = "Fresh baked to order",
   backHref,
+  showLogo = true,
 }: CustomerHeaderProps) {
   const { isSignedIn, isLoaded } = useUser();
 
   return (
     <header className="bg-white border-b-4 border-blue-900 sticky top-0 z-10 overflow-visible">
-      <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
+      <div className="max-w-2xl mx-auto px-4 h-14 flex items-center gap-3">
         {backHref && (
-          <Link href={backHref} className="shrink-0 mr-1 self-center" aria-label="Go back">
+          <Link href={backHref} className="shrink-0 mr-1" aria-label="Go back">
             <Image src="/back-button.png" alt="Back" width={80} height={44} className="h-9 w-auto" />
           </Link>
         )}
-        <Image
-          src="/logo.png"
-          alt="Ev'ry Bites Bakery"
-          width={88}
-          height={88}
-          className="shrink-0 self-start [filter:drop-shadow(5px_7px_6px_rgba(0,0,0,0.30))]"
-        />
-        <div className="flex-1 min-w-0">
-          <h1 className="text-xl font-bold text-blue-900 leading-none truncate">
-            {title}
-          </h1>
-          <p className="text-xs text-sky-600">{subtitle}</p>
-        </div>
+        {showLogo && (
+          <Image
+            src="/logo.png"
+            alt="Ev'ry Bites Bakery"
+            width={88}
+            height={88}
+            className="shrink-0 self-start [filter:drop-shadow(6px_8px_10px_rgba(0,0,0,0.55))]"
+          />
+        )}
+        <div className="flex-1" />
         {isLoaded && (
           <div className="flex items-center gap-2 shrink-0">
             {isSignedIn ? (

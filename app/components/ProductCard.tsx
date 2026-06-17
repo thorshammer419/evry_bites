@@ -29,7 +29,7 @@ export function ProductCard({ product }: ProductCardProps) {
 
   return (
     <>
-      <div className="bg-white rounded-3xl shadow-sm border border-sky-100 overflow-hidden flex flex-col">
+      <div className="bg-white rounded-3xl border border-sky-100 overflow-hidden flex flex-col [box-shadow:5px_7px_16px_rgba(0,0,0,0.32)]">
         <div className="h-48 bg-sky-50 overflow-hidden relative">
           {product.imageUrl ? (
             <Image
