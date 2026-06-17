@@ -317,7 +317,7 @@ function OrderFormInner({ products }: OrderFormClientProps) {
             <div className="space-y-3">
               {([
                 { value: "venmo", label: "Venmo" },
-                { value: "paypal", label: "PayPal" },
+                { value: "paypal", label: "PayPal / Debit / Credit Card" },
                 { value: "cash", label: "Cash on Delivery" },
                 { value: "check", label: "Check on Delivery" },
               ] as { value: PaymentMethod; label: string }[]).map((option) => (
