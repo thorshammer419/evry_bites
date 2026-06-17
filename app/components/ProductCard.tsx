@@ -14,11 +14,13 @@ export function ProductCard({ product }: ProductCardProps) {
   const quantity = cart[product.id] ?? 0;
   const price = Number(product.price);
   const [showIngredients, setShowIngredients] = useState(false);
+  const soldOut = product.unitsAvailable === 0;
+  const atMax = product.unitsAvailable !== null && product.unitsAvailable !== undefined && quantity >= product.unitsAvailable;
 
   return (
     <>
       <div className="bg-white rounded-3xl shadow-sm border border-amber-100 overflow-hidden flex flex-col">
-        <div className="h-48 bg-amber-50 overflow-hidden">
+        <div className="h-48 bg-amber-50 overflow-hidden relative">
           {product.imageUrl ? (
             <Image
               src={product.imageUrl}
@@ -30,6 +32,13 @@ export function ProductCard({ product }: ProductCardProps) {
           ) : (
             <div className="flex h-full items-center justify-center text-5xl">
               🧁
+            </div>
+          )}
+          {soldOut && (
+            <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+              <span className="bg-white text-red-700 font-bold text-sm px-3 py-1 rounded-full tracking-wide uppercase">
+                Sold Out
+              </span>
             </div>
           )}
         </div>
@@ -59,7 +68,7 @@ export function ProductCard({ product }: ProductCardProps) {
                 onClick={() => setQuantity(product.id, quantity - 1)}
                 className="w-8 h-8 rounded-full bg-amber-100 text-amber-800 font-bold text-lg flex items-center justify-center hover:bg-amber-200 active:bg-amber-300 transition-colors disabled:opacity-30"
                 aria-label="Decrease quantity"
-                disabled={quantity === 0}
+                disabled={quantity === 0 || soldOut}
               >
                 −
               </button>
@@ -68,8 +77,9 @@ export function ProductCard({ product }: ProductCardProps) {
               </span>
               <button
                 onClick={() => setQuantity(product.id, quantity + 1)}
-                className="w-8 h-8 rounded-full bg-amber-800 text-white font-bold text-lg flex items-center justify-center hover:bg-amber-700 active:bg-amber-900 transition-colors"
+                className="w-8 h-8 rounded-full bg-amber-800 text-white font-bold text-lg flex items-center justify-center hover:bg-amber-700 active:bg-amber-900 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 aria-label="Increase quantity"
+                disabled={soldOut || atMax}
               >
                 +
               </button>

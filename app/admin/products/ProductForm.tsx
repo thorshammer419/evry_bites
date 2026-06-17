@@ -18,6 +18,7 @@ interface ProductFormProps {
     active?: boolean;
     ingredients?: string | null;
     supplyCostPerBatch?: string | null;
+    unitsAvailable?: number | null;
   };
   submitLabel?: string;
 }
@@ -192,6 +193,22 @@ export default function ProductForm({
           defaultValue={defaultValues.supplyCostPerBatch ?? ""}
           className="w-full rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900 placeholder-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-400"
           placeholder="0.00"
+        />
+      </div>
+
+      <div>
+        <label htmlFor="unitsAvailable" className="block text-sm font-medium text-amber-900 mb-1">
+          Units Available <span className="text-amber-500 font-normal">(leave blank for unlimited)</span>
+        </label>
+        <input
+          id="unitsAvailable"
+          name="unitsAvailable"
+          type="number"
+          min="0"
+          step="1"
+          defaultValue={defaultValues.unitsAvailable != null ? String(defaultValues.unitsAvailable) : ""}
+          className="w-full rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900 placeholder-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-400"
+          placeholder="Unlimited"
         />
       </div>
 

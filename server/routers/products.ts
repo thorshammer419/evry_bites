@@ -28,6 +28,7 @@ export const productsRouter = router({
         active: z.boolean().default(true),
         ingredients: z.string().optional(),
         supplyCostPerBatch: z.string().optional(),
+        unitsAvailable: z.number().int().min(0).optional(),
       })
     )
     .mutation(({ input }) =>
@@ -42,6 +43,7 @@ export const productsRouter = router({
           active: input.active,
           ingredients: input.ingredients || null,
           supplyCostPerBatch: input.supplyCostPerBatch || null,
+          unitsAvailable: input.unitsAvailable ?? null,
         },
       })
     ),
@@ -59,6 +61,7 @@ export const productsRouter = router({
         active: z.boolean(),
         ingredients: z.string().optional(),
         supplyCostPerBatch: z.string().optional(),
+        unitsAvailable: z.number().int().min(0).optional(),
       })
     )
     .mutation(({ input }) =>
@@ -74,6 +77,7 @@ export const productsRouter = router({
           active: input.active,
           ingredients: input.ingredients || null,
           supplyCostPerBatch: input.supplyCostPerBatch || null,
+          unitsAvailable: input.unitsAvailable ?? null,
         },
       })
     ),

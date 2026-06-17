@@ -42,6 +42,15 @@ async function resolveProducts(items: { productId: string; quantity: number }[])
     if (!product || !product.active) {
       throw new TRPCError({ code: "BAD_REQUEST", message: "One or more items are no longer available." });
     }
+    if (product.unitsAvailable !== null && product.unitsAvailable < item.quantity) {
+      const available = product.unitsAvailable;
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: available === 0
+          ? `${product.name} is sold out.`
+          : `Only ${available} unit(s) of ${product.name} available.`,
+      });
+    }
   }
 
   let totalAmount = 0;
@@ -50,6 +59,20 @@ async function resolveProducts(items: { productId: string; quantity: number }[])
   }
 
   return { productMap, totalAmount };
+}
+
+async function decrementStock(items: { productId: string; quantity: number }[]) {
+  for (const item of items) {
+    await db.product.updateMany({
+      where: { id: item.productId, unitsAvailable: { not: null } },
+      data: { unitsAvailable: { decrement: item.quantity } },
+    });
+    // Floor at 0 to avoid negatives from concurrent orders
+    await db.product.updateMany({
+      where: { id: item.productId, unitsAvailable: { lt: 0 } },
+      data: { unitsAvailable: 0 },
+    });
+  }
 }
 
 async function getPaypalAccessToken(): Promise<string> {
@@ -145,6 +168,8 @@ export const ordersRouter = router({
         },
         include: { orderItems: { include: { product: true } } },
       });
+
+      await decrementStock(input.items);
 
       ctx.notifier
         .notify({ type: "order.received", order })
@@ -254,6 +279,8 @@ export const ordersRouter = router({
         data: { status: "received", paymentMethod: actualPaymentMethod },
         include: { orderItems: { include: { product: true } } },
       });
+
+      await decrementStock(order.orderItems.map(i => ({ productId: i.productId, quantity: i.quantity })));
 
       ctx.notifier
         .notify({ type: "order.received", order })
