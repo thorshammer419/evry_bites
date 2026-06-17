@@ -19,22 +19,44 @@ export function CustomerHeader({
 
   return (
     <header className="bg-white border-b-4 border-blue-900 sticky top-0 z-10 overflow-visible">
-      <div className="max-w-2xl mx-auto px-4 h-14 flex items-center gap-3">
+      <div className="max-w-2xl mx-auto px-4 h-16 flex items-center gap-3">
         {backHref && (
-          <Link href={backHref} className="shrink-0 mr-1" aria-label="Go back">
+          <Link href={backHref} className="shrink-0" aria-label="Go back">
             <Image src="/back-button.png" alt="Back" width={80} height={44} className="h-9 w-auto" />
           </Link>
         )}
         {showLogo && (
-          <Image
-            src="/logo.png"
-            alt="Ev'ry Bites Bakery"
-            width={88}
-            height={88}
-            className="shrink-0 self-start [filter:drop-shadow(6px_8px_10px_rgba(0,0,0,0.55))]"
-          />
+          <Link
+            href="/story"
+            className="shrink-0 self-start mt-[10px] flex flex-col items-end"
+            aria-label="Our story"
+          >
+            <Image
+              src="/click_for_my_story.png"
+              alt="Click for our story"
+              width={76} height={28}
+              className="h-7 w-auto mb-1"
+            />
+            <Image
+              src="/logo.png"
+              alt="Ev'ry Bites Bakery"
+              width={88} height={88}
+              className="[filter:drop-shadow(6px_8px_10px_rgba(0,0,0,0.55))]"
+            />
+          </Link>
         )}
-        <div className="flex-1" />
+        {showLogo ? (
+          <div className="flex-1 flex justify-center items-center">
+            <Image
+              src="/fresh_baked_banner.png"
+              alt="Fresh baked to order"
+              width={107} height={40}
+              className="h-10 w-auto"
+            />
+          </div>
+        ) : (
+          <div className="flex-1" />
+        )}
         {isLoaded && (
           <div className="flex items-center gap-2 shrink-0">
             {isSignedIn ? (
