@@ -466,16 +466,27 @@ function OrderFormInner({ products }: OrderFormClientProps) {
               fundingSource={paymentMethod === "venmo" ? "venmo" : undefined}
               createOrder={async () => {
                 setFormError(null);
-                if (!validate()) throw new Error("Validation failed");
-                const result = await createPaypalOrderMutation.mutateAsync(collectFormData());
-                pendingOrderRef.current = result;
-                return result.paypalOrderId;
+                if (!validate()) throw new Error("validation");
+                try {
+                  const result = await createPaypalOrderMutation.mutateAsync(collectFormData());
+                  pendingOrderRef.current = result;
+                  return result.paypalOrderId;
+                } catch (err) {
+                  const msg = err instanceof Error ? err.message : "Unknown error";
+                  setFormError(`PayPal error: ${msg}`);
+                  throw err;
+                }
               }}
               onApprove={async () => {
                 if (!pendingOrderRef.current) return;
                 await capturePaypalOrderMutation.mutateAsync(pendingOrderRef.current);
               }}
-              onError={() => setFormError("Something went wrong with PayPal. Please try again.")}
+              onError={(err) => {
+                if (err instanceof Error && err.message === "validation") return;
+                if (!createPaypalOrderMutation.isError) {
+                  setFormError("Something went wrong with PayPal. Please try again.");
+                }
+              }}
             />
           ) : (
             <button

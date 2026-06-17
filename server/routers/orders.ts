@@ -69,7 +69,11 @@ async function getPaypalAccessToken(): Promise<string> {
     body: "grant_type=client_credentials",
   });
 
-  if (!res.ok) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to authenticate with PayPal." });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "(unreadable)");
+    console.error(`[paypal] auth failed ${res.status}: ${body}`);
+    throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `PayPal auth failed (${res.status}): ${body}` });
+  }
   const data = await res.json() as { access_token: string };
   return data.access_token;
 }
@@ -205,8 +209,10 @@ export const ordersRouter = router({
       });
 
       if (!paypalRes.ok) {
+        const body = await paypalRes.text().catch(() => "(unreadable)");
+        console.error(`[paypal] order creation failed ${paypalRes.status}: ${body}`);
         await db.order.delete({ where: { id: order.id } });
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to create PayPal order." });
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `PayPal order creation failed (${paypalRes.status}): ${body}` });
       }
 
       const paypalOrder = await paypalRes.json() as { id: string };
