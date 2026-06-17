@@ -28,7 +28,7 @@ export function ScrollHint() {
         <svg
           key={delay}
           xmlns="http://www.w3.org/2000/svg"
-          className="w-4 h-4 text-purple-600 animate-bounce opacity-60"
+          className="w-6 h-6 text-purple-600 animate-bounce opacity-60"
           style={{ animationDelay: `${delay}ms` }}
           fill="none"
           viewBox="0 0 24 24"

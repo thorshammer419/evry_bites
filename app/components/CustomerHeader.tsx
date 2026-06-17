@@ -26,32 +26,32 @@ export function CustomerHeader({
           </Link>
         )}
         {showLogo && (
-          <Link
-            href="/story"
-            className="shrink-0 self-start mt-[10px] flex flex-col items-end"
-            aria-label="Our story"
-          >
-            <Image
-              src="/click_for_my_story.png"
-              alt="Click for our story"
-              width={76} height={28}
-              className="h-7 w-auto mb-1"
-            />
-            <Image
-              src="/logo.png"
-              alt="Ev'ry Bites Bakery"
-              width={88} height={88}
-              className="[filter:drop-shadow(6px_8px_10px_rgba(0,0,0,0.55))]"
-            />
-          </Link>
+          <div className="relative shrink-0 self-start">
+            <Link href="/story" aria-label="Our story">
+              <Image
+                src="/logo.png"
+                alt="Ev'ry Bites Bakery"
+                width={88} height={88}
+                className="[filter:drop-shadow(6px_8px_10px_rgba(0,0,0,0.55))]"
+              />
+            </Link>
+            <Link href="/story" className="absolute top-[10px] left-[59px] z-10" aria-label="Click for our story">
+              <Image
+                src="/click_for_my_story.png"
+                alt="Click for our story"
+                width={76} height={28}
+                className="h-7 w-auto"
+              />
+            </Link>
+          </div>
         )}
         {showLogo ? (
           <div className="flex-1 flex justify-center items-center">
             <Image
               src="/fresh_baked_banner.png"
               alt="Fresh baked to order"
-              width={107} height={40}
-              className="h-10 w-auto"
+              width={152} height={58}
+              className="h-[58px] w-auto"
             />
           </div>
         ) : (
