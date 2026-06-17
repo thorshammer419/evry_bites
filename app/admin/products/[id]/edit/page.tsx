@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { db } from "../../../../../lib/db";
 import ProductForm from "../../ProductForm";
 import { createCallerFactory } from "../../../../../server/trpc";
@@ -44,7 +45,7 @@ export default async function EditProductPage({ params }: EditProductPageProps) 
       revalidatePath("/admin/products");
       redirect("/admin/products");
     } catch (err) {
-      if (err instanceof Error && (err as { digest?: string }).digest?.startsWith("NEXT_REDIRECT")) throw err;
+      if (isRedirectError(err)) throw err;
       console.error("[product-update]", err);
       return { error: err instanceof Error ? err.message : "Failed to save product." };
     }

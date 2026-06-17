@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { isRedirectError } from "next/dist/client/components/redirect-error";
 import ProductForm from "../ProductForm";
 import { createCallerFactory } from "../../../../server/trpc";
 import { appRouter } from "../../../../server/routers/_app";
@@ -33,7 +34,7 @@ async function createProductAction(_prev: unknown, formData: FormData) {
     revalidatePath("/admin/products");
     redirect("/admin/products");
   } catch (err) {
-    if (err instanceof Error && (err as { digest?: string }).digest?.startsWith("NEXT_REDIRECT")) throw err;
+    if (isRedirectError(err)) throw err;
     console.error("[product-create]", err);
     return { error: err instanceof Error ? err.message : "Failed to create product." };
   }
