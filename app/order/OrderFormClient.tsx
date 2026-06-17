@@ -61,6 +61,7 @@ function OrderFormInner({ products }: OrderFormClientProps) {
   const { user, isLoaded: clerkLoaded, isSignedIn } = useUser();
   const isCashCheck = paymentMethod === "cash" || paymentMethod === "check";
   const cashCheckApproved = Boolean(isSignedIn && user?.publicMetadata?.cashCheckApproved);
+  const cashCheckPending = Boolean(isSignedIn && !cashCheckApproved && user?.unsafeMetadata?.cashCheckPending);
 
   const hasAutoFilled = useRef(false);
   useEffect(() => {
@@ -133,7 +134,10 @@ function OrderFormInner({ products }: OrderFormClientProps) {
 
   const [approvalRequested, setApprovalRequested] = useState(false);
   const requestApprovalMutation = trpc.orders.requestCashCheckApproval.useMutation({
-    onSuccess: () => setApprovalRequested(true),
+    onSuccess: () => {
+      setApprovalRequested(true);
+      user?.update({ unsafeMetadata: { ...user.unsafeMetadata, cashCheckPending: true } }).catch(() => {});
+    },
   });
 
   const inputClass = "w-full rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900 focus:outline-none focus:ring-2 focus:ring-amber-400";
@@ -364,9 +368,9 @@ function OrderFormInner({ products }: OrderFormClientProps) {
                   <UserButton />
                   <span className="text-xs text-amber-600">Signed in as {user?.primaryEmailAddress?.emailAddress}</span>
                 </div>
-                {approvalRequested ? (
-                  <p className="text-sm text-green-700 font-medium">
-                    Approval request sent! You&apos;ll be notified once approved.
+                {cashCheckPending || approvalRequested ? (
+                  <p className="text-sm text-amber-700 font-medium">
+                    Approval Request Pending
                   </p>
                 ) : (
                   <>
