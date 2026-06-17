@@ -236,9 +236,16 @@ export const ordersRouter = router({
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Payment capture failed." });
       }
 
+      const captureData = await captureRes.json() as {
+        payment_source?: { venmo?: unknown; paypal?: unknown };
+        purchase_units?: { payments?: { captures?: { seller_receivable_breakdown?: { paypal_fee?: { value?: string } } }[] } }[];
+      };
+
+      const actualPaymentMethod = captureData.payment_source?.venmo ? "venmo" : "paypal";
+
       const order = await db.order.update({
         where: { id: input.orderId },
-        data: { status: "received" },
+        data: { status: "received", paymentMethod: actualPaymentMethod },
         include: { orderItems: { include: { product: true } } },
       });
 
