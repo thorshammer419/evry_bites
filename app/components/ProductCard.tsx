@@ -63,35 +63,29 @@ export function ProductCard({ product }: ProductCardProps) {
             </p>
           </div>
 
-          <div className="mt-auto flex items-center justify-between">
-            <div>
-              <span className="text-lg font-bold text-amber-900">
-                ${price.toFixed(2)}
-              </span>
-              <span className="text-xs text-amber-600 ml-1">
-                / {product.unitLabel}
-              </span>
-            </div>
+          <div className="mt-auto flex flex-col gap-1">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-lg font-bold text-amber-900">
+                  ${price.toFixed(2)}
+                </span>
+                <span className="text-xs text-amber-600 ml-1">
+                  / {product.unitLabel}
+                </span>
+              </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setQuantity(product.id, quantity - 1)}
-                className="w-8 h-8 rounded-full bg-amber-100 text-amber-800 font-bold text-lg flex items-center justify-center hover:bg-amber-200 active:bg-amber-300 transition-colors disabled:opacity-30"
-                aria-label="Decrease quantity"
-                disabled={quantity === 0 || soldOut}
-              >
-                −
-              </button>
-              <span className="w-6 text-center font-semibold text-amber-900">
-                {quantity}
-              </span>
-              <div className="relative">
-                {showMaxHint && (
-                  <div className="absolute bottom-full mb-2 right-0 bg-amber-900 text-white text-xs rounded-lg px-2 py-1 whitespace-nowrap shadow-lg pointer-events-none">
-                    Only {product.unitsAvailable} available
-                    <span className="absolute top-full right-3 border-4 border-transparent border-t-amber-900" />
-                  </div>
-                )}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setQuantity(product.id, quantity - 1)}
+                  className="w-8 h-8 rounded-full bg-amber-100 text-amber-800 font-bold text-lg flex items-center justify-center hover:bg-amber-200 active:bg-amber-300 transition-colors disabled:opacity-30"
+                  aria-label="Decrease quantity"
+                  disabled={quantity === 0 || soldOut}
+                >
+                  −
+                </button>
+                <span className="w-6 text-center font-semibold text-amber-900">
+                  {quantity}
+                </span>
                 <button
                   onClick={soldOut ? undefined : handlePlusClick}
                   className="w-8 h-8 rounded-full bg-amber-800 text-white font-bold text-lg flex items-center justify-center hover:bg-amber-700 active:bg-amber-900 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
@@ -102,6 +96,12 @@ export function ProductCard({ product }: ProductCardProps) {
                 </button>
               </div>
             </div>
+
+            {showMaxHint && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 text-right">
+                Only {product.unitsAvailable} {product.unitsAvailable === 1 ? "batch" : "batches"} available
+              </p>
+            )}
           </div>
 
           <div className="flex items-center justify-between">
