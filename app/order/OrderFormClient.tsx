@@ -62,6 +62,18 @@ function OrderFormInner({ products }: OrderFormClientProps) {
   const isCashCheck = paymentMethod === "cash" || paymentMethod === "check";
   const cashCheckApproved = Boolean(isSignedIn && user?.publicMetadata?.cashCheckApproved);
 
+  const hasAutoFilled = useRef(false);
+  useEffect(() => {
+    if (!clerkLoaded || !user || hasAutoFilled.current) return;
+    hasAutoFilled.current = true;
+    if (user.firstName) setFirstName(user.firstName);
+    if (user.lastName) setLastName(user.lastName);
+    const email = user.primaryEmailAddress?.emailAddress;
+    if (email) setCustomerEmail(email);
+    const phone = user.phoneNumbers?.[0]?.phoneNumber ?? (user.publicMetadata?.phone as string | undefined);
+    if (phone) setCustomerPhone(formatPhone(phone));
+  }, [clerkLoaded, user]);
+
   const pendingOrderRef = useRef<{ orderId: string; paypalOrderId: string } | null>(null);
 
   const lineItems = products
