@@ -29,8 +29,10 @@ jobs:
           NEXT_PUBLIC_VENMO_HANDLE: "@thorshammer419"
           NEXT_PUBLIC_PAYPAL_LINK: "paypal.me/markaerickson"
 
-      - name: Remove dev dependencies
-        run: npm prune --omit=dev
+      - name: Assemble standalone bundle
+        run: |
+          cp -r public .next/standalone/public
+          cp -r .next/static .next/standalone/.next/static
 
       - name: Log in to Azure
         uses: azure/login@v2
@@ -41,4 +43,4 @@ jobs:
         uses: azure/webapps-deploy@v3
         with:
           app-name: evry-bites
-          package: .
+          package: .next/standalone
