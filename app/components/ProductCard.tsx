@@ -14,8 +14,18 @@ export function ProductCard({ product }: ProductCardProps) {
   const quantity = cart[product.id] ?? 0;
   const price = Number(product.price);
   const [showIngredients, setShowIngredients] = useState(false);
+  const [showMaxHint, setShowMaxHint] = useState(false);
   const soldOut = product.unitsAvailable === 0;
   const atMax = product.unitsAvailable !== null && product.unitsAvailable !== undefined && quantity >= product.unitsAvailable;
+
+  function handlePlusClick() {
+    if (atMax) {
+      setShowMaxHint(true);
+      setTimeout(() => setShowMaxHint(false), 2500);
+    } else {
+      setQuantity(product.id, quantity + 1);
+    }
+  }
 
   return (
     <>
@@ -75,14 +85,22 @@ export function ProductCard({ product }: ProductCardProps) {
               <span className="w-6 text-center font-semibold text-amber-900">
                 {quantity}
               </span>
-              <button
-                onClick={() => setQuantity(product.id, quantity + 1)}
-                className="w-8 h-8 rounded-full bg-amber-800 text-white font-bold text-lg flex items-center justify-center hover:bg-amber-700 active:bg-amber-900 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                aria-label="Increase quantity"
-                disabled={soldOut || atMax}
-              >
-                +
-              </button>
+              <div className="relative">
+                {showMaxHint && (
+                  <div className="absolute bottom-full mb-2 right-0 bg-amber-900 text-white text-xs rounded-lg px-2 py-1 whitespace-nowrap shadow-lg pointer-events-none">
+                    Only {product.unitsAvailable} available
+                    <span className="absolute top-full right-3 border-4 border-transparent border-t-amber-900" />
+                  </div>
+                )}
+                <button
+                  onClick={soldOut ? undefined : handlePlusClick}
+                  className="w-8 h-8 rounded-full bg-amber-800 text-white font-bold text-lg flex items-center justify-center hover:bg-amber-700 active:bg-amber-900 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  aria-label="Increase quantity"
+                  disabled={soldOut}
+                >
+                  +
+                </button>
+              </div>
             </div>
           </div>
 
