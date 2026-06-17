@@ -21,7 +21,8 @@ function customerName(order: OrderForNotification): string {
 
 function getStatusMessage(
   order: OrderForNotification,
-  newStatus: OrderStatus
+  newStatus: OrderStatus,
+  reason?: string
 ): { subject: string; body: string; sms: string } {
   const ref = order.id.slice(0, 8).toUpperCase();
   const total = `$${Number(order.totalAmount).toFixed(2)}`;
@@ -58,6 +59,14 @@ function getStatusMessage(
         body: `Hi ${name},\n\nYour order (#${ref}) is on its way! Check your email for tracking information.\n\nTotal: ${total}`,
         sms: `EvryBites: Your order #${ref} has shipped! Check email for tracking.`,
       };
+    case "cancelled": {
+      const reasonLine = reason ? `\n\nReason: ${reason}` : "";
+      return {
+        subject: `EvryBites Order #${ref} — Cancelled`,
+        body: `Hi ${name},\n\nYour EvryBites order (#${ref}) has been cancelled.${reasonLine}\n\nIf you have any questions, please reach out.\n\nTotal that will not be charged: ${total}`,
+        sms: `EvryBites: Your order #${ref} has been cancelled.${reason ? ` Reason: ${reason}` : ""}`,
+      };
+    }
     default:
       throw new Error(`No notification template for status: ${newStatus}`);
   }
@@ -73,6 +82,13 @@ export class AcsNotifier implements Notifier {
 
     if (event.type === "order.received") {
       await this.sendOrderReceived(event.order, connectionString);
+    } else if (event.type === "order.cancelled") {
+      await this.sendStatusChanged(
+        event.order,
+        "cancelled" as import("@prisma/client").OrderStatus,
+        connectionString,
+        event.reason
+      );
     } else if (event.type === "user.cash_check_requested") {
       await this.sendCashCheckRequest(event.request, connectionString);
     } else {
@@ -186,12 +202,13 @@ export class AcsNotifier implements Notifier {
   private async sendStatusChanged(
     order: OrderForNotification,
     newStatus: OrderStatus,
-    connectionString: string
+    connectionString: string,
+    reason?: string
   ): Promise<void> {
     const fromEmail = process.env.ACS_FROM_EMAIL;
     const fromPhone = process.env.ACS_FROM_PHONE;
 
-    const { subject, body, sms } = getStatusMessage(order, newStatus);
+    const { subject, body, sms } = getStatusMessage(order, newStatus, reason);
 
     const { EmailClient } = await import("@azure/communication-email");
     const { SmsClient } = await import("@azure/communication-sms");

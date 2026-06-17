@@ -25,6 +25,7 @@ enum OrderStatus {
   ready
   shipped
   delivered
+  cancelled
 }
 
 model Product {

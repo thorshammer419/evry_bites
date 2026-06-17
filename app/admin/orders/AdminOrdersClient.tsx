@@ -37,6 +37,7 @@ const STATUS_LABELS: Record<OrderStatus, string> = {
   ready: "Ready",
   shipped: "Shipped",
   delivered: "Delivered",
+  cancelled: "Cancelled",
 };
 
 const STATUS_COLORS: Record<OrderStatus, string> = {
@@ -46,6 +47,7 @@ const STATUS_COLORS: Record<OrderStatus, string> = {
   ready: "bg-purple-100 text-purple-800",
   shipped: "bg-indigo-100 text-indigo-800",
   delivered: "bg-green-100 text-green-800",
+  cancelled: "bg-red-100 text-red-700",
 };
 
 const PAYMENT_LABELS: Record<PaymentMethod, string> = {
@@ -76,12 +78,65 @@ function matchesSearch(order: OrderWithItems, query: string): boolean {
   );
 }
 
+function CancelModal({
+  onConfirm,
+  onClose,
+  isPending,
+}: {
+  onConfirm: (reason: string) => void;
+  onClose: () => void;
+  isPending: boolean;
+}) {
+  const [reason, setReason] = useState("");
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5">
+        <h2 className="text-lg font-bold text-amber-900 mb-1">Cancel Order?</h2>
+        <p className="text-sm text-amber-700 mb-4">
+          The customer will be notified. This cannot be undone.
+        </p>
+        <label className="block text-sm font-medium text-amber-800 mb-1">
+          Reason <span className="text-amber-400 font-normal">(optional)</span>
+        </label>
+        <textarea
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          rows={3}
+          placeholder="e.g. Item no longer available"
+          className="w-full rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none mb-4"
+        />
+        <div className="flex gap-2">
+          <button
+            onClick={onClose}
+            disabled={isPending}
+            className="flex-1 border border-amber-200 text-amber-800 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-amber-50 transition-colors disabled:opacity-60"
+          >
+            Keep Order
+          </button>
+          <button
+            onClick={() => onConfirm(reason)}
+            disabled={isPending}
+            className="flex-1 bg-red-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-red-700 transition-colors disabled:opacity-60"
+          >
+            {isPending ? "Cancelling..." : "Cancel Order"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function OrderRow({ order }: { order: OrderWithItems }) {
   const [expanded, setExpanded] = useState(false);
+  const [showCancelModal, setShowCancelModal] = useState(false);
   const utils = trpc.useUtils();
 
   const updateStatus = trpc.orders.updateStatus.useMutation({
     onSuccess: () => utils.orders.listAll.invalidate(),
+  });
+
+  const cancelOrder = trpc.orders.cancelOrder.useMutation({
+    onSuccess: () => { utils.orders.listAll.invalidate(); setShowCancelModal(false); },
   });
 
   const actions = nextStatuses(order);
@@ -174,22 +229,28 @@ function OrderRow({ order }: { order: OrderWithItems }) {
           </div>
 
           {/* Actions */}
-          {actions.length > 0 && (
-            <div className="space-y-2 pt-1">
-              {actions.map((next) => (
-                <button
-                  key={next}
-                  onClick={() =>
-                    updateStatus.mutate({ id: order.id, status: next as Exclude<OrderStatus, "received" | "pending_payment"> })
-                  }
-                  disabled={updateStatus.isPending}
-                  className="w-full bg-amber-800 text-white px-4 py-3 rounded-xl font-semibold text-sm hover:bg-amber-700 active:bg-amber-900 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  {updateStatus.isPending ? "Updating..." : ADVANCE_LABELS[next]}
-                </button>
-              ))}
-            </div>
-          )}
+          <div className="space-y-2 pt-1">
+            {actions.map((next) => (
+              <button
+                key={next}
+                onClick={() =>
+                  updateStatus.mutate({ id: order.id, status: next as Exclude<OrderStatus, "received" | "pending_payment" | "cancelled"> })
+                }
+                disabled={updateStatus.isPending}
+                className="w-full bg-amber-800 text-white px-4 py-3 rounded-xl font-semibold text-sm hover:bg-amber-700 active:bg-amber-900 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {updateStatus.isPending ? "Updating..." : ADVANCE_LABELS[next]}
+              </button>
+            ))}
+            {order.status === "received" && (
+              <button
+                onClick={() => setShowCancelModal(true)}
+                className="w-full border border-red-200 text-red-600 px-4 py-2.5 rounded-xl font-semibold text-sm hover:bg-red-50 transition-colors"
+              >
+                Cancel Order
+              </button>
+            )}
+          </div>
 
           {updateStatus.isError && (
             <p className="text-sm text-red-600">
@@ -197,6 +258,14 @@ function OrderRow({ order }: { order: OrderWithItems }) {
             </p>
           )}
         </div>
+      )}
+
+      {showCancelModal && (
+        <CancelModal
+          isPending={cancelOrder.isPending}
+          onClose={() => setShowCancelModal(false)}
+          onConfirm={(reason) => cancelOrder.mutate({ id: order.id, reason: reason || undefined })}
+        />
       )}
     </div>
   );

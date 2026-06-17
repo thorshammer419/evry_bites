@@ -32,6 +32,7 @@ export interface CashCheckRequestForNotification {
 export type OrderEvent =
   | { type: "order.received"; order: OrderReceivedForNotification }
   | { type: "order.status_changed"; order: OrderForNotification; newStatus: OrderStatus }
+  | { type: "order.cancelled"; order: OrderForNotification; reason?: string }
   | { type: "user.cash_check_requested"; request: CashCheckRequestForNotification };
 
 export interface Notifier {

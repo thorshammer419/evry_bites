@@ -256,6 +256,22 @@ export const ordersRouter = router({
       return order;
     }),
 
+  cancelOrder: publicProcedure
+    .input(z.object({ id: z.string(), reason: z.string().optional() }))
+    .mutation(async ({ input, ctx }) => {
+      const order = await db.order.update({
+        where: { id: input.id },
+        data: { status: "cancelled" },
+        include: { orderItems: { include: { product: true } } },
+      });
+
+      ctx.notifier
+        .notify({ type: "order.cancelled", order, reason: input.reason })
+        .catch((err) => console.error("[orders] cancel notification failed:", err));
+
+      return order;
+    }),
+
   requestCashCheckApproval: publicProcedure
     .input(z.object({
       userId: z.string(),
