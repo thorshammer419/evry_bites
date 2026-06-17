@@ -62,6 +62,20 @@ const ADVANCE_LABELS: Partial<Record<OrderStatus, string>> = {
   delivered: "Mark as Delivered",
 };
 
+const ALL_STATUSES = Object.keys(STATUS_LABELS) as OrderStatus[];
+
+function matchesSearch(order: OrderWithItems, query: string): boolean {
+  if (!query) return true;
+  const q = query.toLowerCase();
+  const name = [order.firstName, order.lastName].filter(Boolean).join(" ").toLowerCase();
+  return (
+    name.includes(q) ||
+    order.customerEmail.toLowerCase().includes(q) ||
+    order.id.toLowerCase().includes(q) ||
+    order.id.slice(0, 8).toUpperCase().includes(query.toUpperCase())
+  );
+}
+
 function OrderRow({ order }: { order: OrderWithItems }) {
   const [expanded, setExpanded] = useState(false);
   const utils = trpc.useUtils();
@@ -190,18 +204,62 @@ function OrderRow({ order }: { order: OrderWithItems }) {
 
 export function AdminOrdersClient() {
   const { data: orders, isLoading, isError } = trpc.orders.listAll.useQuery();
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<OrderStatus | "all">("all");
+
+  const filtered = (orders ?? []).filter(
+    (o) =>
+      (statusFilter === "all" || o.status === statusFilter) &&
+      matchesSearch(o, search)
+  );
 
   return (
     <div className="px-4 py-6">
       <div className="max-w-lg mx-auto">
-        <div className="mb-6 flex items-center justify-between">
+        <div className="mb-4 flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-amber-900">Orders</h1>
             {orders && (
               <p className="text-sm text-amber-600 mt-0.5">
-                {orders.length} total
+                {filtered.length} of {orders.length}
               </p>
             )}
+          </div>
+        </div>
+
+        {/* Filters */}
+        <div className="mb-4 space-y-2">
+          <input
+            type="search"
+            placeholder="Search by name, email, or order ID…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full rounded-xl border border-amber-200 bg-white px-4 py-2.5 text-sm text-amber-900 placeholder-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-400"
+          />
+          <div className="flex gap-2 flex-wrap">
+            <button
+              onClick={() => setStatusFilter("all")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                statusFilter === "all"
+                  ? "bg-amber-800 text-white"
+                  : "border border-amber-200 text-amber-700 hover:bg-amber-50"
+              }`}
+            >
+              All
+            </button>
+            {ALL_STATUSES.map((s) => (
+              <button
+                key={s}
+                onClick={() => setStatusFilter(s)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  statusFilter === s
+                    ? "bg-amber-800 text-white"
+                    : "border border-amber-200 text-amber-700 hover:bg-amber-50"
+                }`}
+              >
+                {STATUS_LABELS[s]}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -218,17 +276,19 @@ export function AdminOrdersClient() {
           </div>
         )}
 
-        {orders && orders.length === 0 && (
+        {orders && filtered.length === 0 && (
           <div className="text-center py-16 text-amber-500">
             <p className="text-3xl mb-3">🧾</p>
-            <p className="font-medium">No orders yet</p>
-            <p className="text-sm mt-1">New orders will appear here</p>
+            <p className="font-medium">{orders.length === 0 ? "No orders yet" : "No matches"}</p>
+            <p className="text-sm mt-1">
+              {orders.length === 0 ? "New orders will appear here" : "Try a different search or filter"}
+            </p>
           </div>
         )}
 
-        {orders && orders.length > 0 && (
+        {filtered.length > 0 && (
           <div className="space-y-3">
-            {orders.map((order) => (
+            {filtered.map((order) => (
               <OrderRow key={order.id} order={order} />
             ))}
           </div>
