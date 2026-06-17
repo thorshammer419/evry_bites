@@ -491,7 +491,7 @@ export function OrderFormClient({ products }: OrderFormClientProps) {
         clientId: process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ?? "",
         currency: "USD",
         components: "buttons",
-        enableFunding: "venmo",
+        enableFunding: "venmo,card",
       }}>
         <OrderFormInner products={products} />
       </PayPalScriptProvider>
