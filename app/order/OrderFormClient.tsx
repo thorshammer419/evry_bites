@@ -318,8 +318,7 @@ function OrderFormInner({ products }: OrderFormClientProps) {
               {([
                 { value: "venmo", label: "Venmo" },
                 { value: "paypal", label: "PayPal / Debit / Credit Card" },
-                { value: "cash", label: "Cash on Delivery" },
-                { value: "check", label: "Check on Delivery" },
+                { value: "cash", label: "Cash or Check on Delivery" },
               ] as { value: PaymentMethod; label: string }[]).map((option) => (
                 <label key={option.value} className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-colors ${
                   paymentMethod === option.value ? "border-amber-800 bg-amber-50" : "border-amber-100 bg-white hover:border-amber-200"}`}>
