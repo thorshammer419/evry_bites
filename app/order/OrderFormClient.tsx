@@ -7,7 +7,6 @@ import type { Product } from "@prisma/client";
 import { PayPalScriptProvider, PayPalButtons } from "@paypal/react-paypal-js";
 import { useUser, SignInButton, SignUpButton, UserButton } from "@clerk/nextjs";
 import { CustomerHeader } from "../components/CustomerHeader";
-import { CustomerFooter } from "../components/CustomerFooter";
 import { CartProvider, useCart } from "../../lib/cart";
 import { trpc } from "../../lib/trpc/react";
 
@@ -405,6 +404,14 @@ function OrderFormInner({ products }: OrderFormClientProps) {
 
           {/* Order Review */}
           <section className="bg-white rounded-3xl shadow-sm border border-amber-100 p-4">
+            <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+              <p className="text-sm font-bold text-amber-900 mb-1">DISCLAIMER:</p>
+              <p className="text-xs text-amber-800 leading-relaxed">
+                This product was not produced in a commercial kitchen. It has been home-processed
+                in a kitchen that may also process common food allergens such as tree nuts,
+                peanuts, eggs, soy, wheat, milk, fish, and crustacean shellfish.
+              </p>
+            </div>
             <h2 className={sectionHeaderClass}>Order Review</h2>
             <div className="space-y-3 mb-4">
               {lineItems.map(({ product, quantity, subtotal }) => (
@@ -473,7 +480,6 @@ function OrderFormInner({ products }: OrderFormClientProps) {
           )}
         </form>
       </main>
-      <CustomerFooter />
     </div>
   );
 }
