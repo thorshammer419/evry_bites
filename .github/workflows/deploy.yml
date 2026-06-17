@@ -1,4 +1,4 @@
-name: Deploy to Azure App Service
+name: Build and Deploy
 
 on:
   push:
@@ -6,13 +6,13 @@ on:
   workflow_dispatch:
 
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Node.js
+      - name: Set up Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -23,14 +23,18 @@ jobs:
 
       - name: Build
         run: npm run build
+        env:
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+          NEXT_PUBLIC_PAYPAL_CLIENT_ID: ${{ secrets.NEXT_PUBLIC_PAYPAL_CLIENT_ID }}
+          NEXT_PUBLIC_VENMO_HANDLE: "@thorshammer419"
+          NEXT_PUBLIC_PAYPAL_LINK: "paypal.me/markaerickson"
 
-      - name: Log in to Azure
-        uses: azure/login@v2
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Remove dev dependencies
+        run: npm prune --omit=dev
 
       - name: Deploy to Azure App Service
         uses: azure/webapps-deploy@v3
         with:
           app-name: evry-bites
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
           package: .
