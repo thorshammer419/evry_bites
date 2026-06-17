@@ -26,7 +26,7 @@ export function CustomerHeader({
           </Link>
         )}
         {showLogo && (
-          <div className="relative shrink-0 self-start">
+          <div className="relative shrink-0 self-start mt-[10px]">
             <Link href="/story" aria-label="Our story">
               <Image
                 src="/logo.png"
