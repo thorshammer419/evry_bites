@@ -26,6 +26,8 @@ async function createProductAction(formData: FormData) {
     unitLabel: formData.get("unitLabel") as string,
     imageUrl,
     active: formData.get("active") === "on",
+    ingredients: (formData.get("ingredients") as string) || undefined,
+    supplyCostPerBatch: (formData.get("supplyCostPerBatch") as string) || undefined,
   });
 
   revalidatePath("/admin/products");

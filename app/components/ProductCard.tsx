@@ -39,6 +39,11 @@ export function ProductCard({ product }: ProductCardProps) {
           <p className="text-sm text-amber-700 mt-1 leading-relaxed">
             {product.description}
           </p>
+          {product.ingredients && (
+            <p className="text-xs text-amber-600 mt-2 leading-relaxed">
+              <span className="font-medium">Ingredients:</span> {product.ingredients}
+            </p>
+          )}
         </div>
 
         <div className="mt-auto flex items-center justify-between">

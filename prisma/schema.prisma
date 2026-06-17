@@ -28,16 +28,18 @@ enum OrderStatus {
 }
 
 model Product {
-  id          String       @id @default(uuid())
-  name        String
-  description String
-  price       Decimal      @db.Decimal(10, 2)
-  batchSize   Int
-  unitLabel   String
-  imageUrl    String?
-  active      Boolean      @default(true)
-  createdAt   DateTime     @default(now())
-  orderItems  OrderItem[]
+  id                 String       @id @default(uuid())
+  name               String
+  description        String
+  price              Decimal      @db.Decimal(10, 2)
+  batchSize          Int
+  unitLabel          String
+  imageUrl           String?
+  active             Boolean      @default(true)
+  createdAt          DateTime     @default(now())
+  ingredients        String?
+  supplyCostPerBatch Decimal?     @db.Decimal(10, 2)
+  orderItems         OrderItem[]
 }
 
 model Order {

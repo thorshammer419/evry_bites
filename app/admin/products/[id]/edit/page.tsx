@@ -37,6 +37,8 @@ export default async function EditProductPage({ params }: EditProductPageProps) 
       unitLabel: formData.get("unitLabel") as string,
       imageUrl,
       active: formData.get("active") === "on",
+      ingredients: (formData.get("ingredients") as string) || undefined,
+      supplyCostPerBatch: (formData.get("supplyCostPerBatch") as string) || undefined,
     });
 
     revalidatePath("/admin/products");
@@ -62,6 +64,10 @@ export default async function EditProductPage({ params }: EditProductPageProps) 
               unitLabel: product.unitLabel,
               imageUrl: product.imageUrl,
               active: product.active,
+              ingredients: product.ingredients,
+              supplyCostPerBatch: product.supplyCostPerBatch
+                ? String(product.supplyCostPerBatch)
+                : null,
             }}
             submitLabel="Save Changes"
           />

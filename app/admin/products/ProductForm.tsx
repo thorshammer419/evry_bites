@@ -14,6 +14,8 @@ interface ProductFormProps {
     unitLabel?: string;
     imageUrl?: string | null;
     active?: boolean;
+    ingredients?: string | null;
+    supplyCostPerBatch?: string | null;
   };
   submitLabel?: string;
 }
@@ -158,6 +160,36 @@ export default function ProductForm({
         )}
 
         <input type="hidden" name="currentImageUrl" value={defaultValues.imageUrl ?? ""} />
+      </div>
+
+      <div>
+        <label htmlFor="ingredients" className="block text-sm font-medium text-amber-900 mb-1">
+          Ingredients <span className="text-amber-500 font-normal">(optional)</span>
+        </label>
+        <textarea
+          id="ingredients"
+          name="ingredients"
+          rows={3}
+          defaultValue={defaultValues.ingredients ?? ""}
+          className="w-full rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900 placeholder-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"
+          placeholder="e.g. flour, sugar, butter, eggs, vanilla extract (contains gluten, dairy, eggs)"
+        />
+      </div>
+
+      <div>
+        <label htmlFor="supplyCostPerBatch" className="block text-sm font-medium text-amber-900 mb-1">
+          Supply Cost per Batch ($) <span className="text-amber-500 font-normal">(optional)</span>
+        </label>
+        <input
+          id="supplyCostPerBatch"
+          name="supplyCostPerBatch"
+          type="number"
+          step="0.01"
+          min="0"
+          defaultValue={defaultValues.supplyCostPerBatch ?? ""}
+          className="w-full rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900 placeholder-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-400"
+          placeholder="0.00"
+        />
       </div>
 
       <div className="flex items-center gap-3">
