@@ -18,31 +18,36 @@ export default async function EditProductPage({ params }: EditProductPageProps) 
   const { id } = await params;
   const product = await db.product.findUniqueOrThrow({ where: { id } });
 
-  async function updateProductAction(formData: FormData) {
+  async function updateProductAction(_prev: unknown, formData: FormData) {
     "use server";
+    try {
+      const imageFile = formData.get("image") as File | null;
+      const currentImageUrl = formData.get("currentImageUrl") as string;
+      let imageUrl: string | undefined = currentImageUrl || undefined;
+      if (imageFile && imageFile.size > 0) {
+        imageUrl = await uploadProductImage(imageFile);
+      }
 
-    const imageFile = formData.get("image") as File | null;
-    const currentImageUrl = formData.get("currentImageUrl") as string;
-    let imageUrl: string | undefined = currentImageUrl || undefined;
-    if (imageFile && imageFile.size > 0) {
-      imageUrl = await uploadProductImage(imageFile);
+      await caller.products.update({
+        id,
+        name: formData.get("name") as string,
+        description: formData.get("description") as string,
+        price: formData.get("price") as string,
+        batchSize: parseInt(formData.get("batchSize") as string, 10),
+        unitLabel: formData.get("unitLabel") as string,
+        imageUrl,
+        active: formData.get("active") === "on",
+        ingredients: (formData.get("ingredients") as string) || undefined,
+        supplyCostPerBatch: (formData.get("supplyCostPerBatch") as string) || undefined,
+      });
+
+      revalidatePath("/admin/products");
+      redirect("/admin/products");
+    } catch (err) {
+      if (err instanceof Error && (err as { digest?: string }).digest?.startsWith("NEXT_REDIRECT")) throw err;
+      console.error("[product-update]", err);
+      return { error: err instanceof Error ? err.message : "Failed to save product." };
     }
-
-    await caller.products.update({
-      id,
-      name: formData.get("name") as string,
-      description: formData.get("description") as string,
-      price: formData.get("price") as string,
-      batchSize: parseInt(formData.get("batchSize") as string, 10),
-      unitLabel: formData.get("unitLabel") as string,
-      imageUrl,
-      active: formData.get("active") === "on",
-      ingredients: (formData.get("ingredients") as string) || undefined,
-      supplyCostPerBatch: (formData.get("supplyCostPerBatch") as string) || undefined,
-    });
-
-    revalidatePath("/admin/products");
-    redirect("/admin/products");
   }
 
   return (

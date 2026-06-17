@@ -9,29 +9,34 @@ import { NullNotifier } from "../../../../lib/null-notifier";
 const createCaller = createCallerFactory(appRouter);
 const caller = createCaller({ notifier: new NullNotifier() });
 
-async function createProductAction(formData: FormData) {
+async function createProductAction(_prev: unknown, formData: FormData) {
   "use server";
+  try {
+    const imageFile = formData.get("image") as File | null;
+    let imageUrl: string | undefined;
+    if (imageFile && imageFile.size > 0) {
+      imageUrl = await uploadProductImage(imageFile);
+    }
 
-  const imageFile = formData.get("image") as File | null;
-  let imageUrl: string | undefined;
-  if (imageFile && imageFile.size > 0) {
-    imageUrl = await uploadProductImage(imageFile);
+    await caller.products.create({
+      name: formData.get("name") as string,
+      description: formData.get("description") as string,
+      price: formData.get("price") as string,
+      batchSize: parseInt(formData.get("batchSize") as string, 10),
+      unitLabel: formData.get("unitLabel") as string,
+      imageUrl,
+      active: formData.get("active") === "on",
+      ingredients: (formData.get("ingredients") as string) || undefined,
+      supplyCostPerBatch: (formData.get("supplyCostPerBatch") as string) || undefined,
+    });
+
+    revalidatePath("/admin/products");
+    redirect("/admin/products");
+  } catch (err) {
+    if (err instanceof Error && (err as { digest?: string }).digest?.startsWith("NEXT_REDIRECT")) throw err;
+    console.error("[product-create]", err);
+    return { error: err instanceof Error ? err.message : "Failed to create product." };
   }
-
-  await caller.products.create({
-    name: formData.get("name") as string,
-    description: formData.get("description") as string,
-    price: formData.get("price") as string,
-    batchSize: parseInt(formData.get("batchSize") as string, 10),
-    unitLabel: formData.get("unitLabel") as string,
-    imageUrl,
-    active: formData.get("active") === "on",
-    ingredients: (formData.get("ingredients") as string) || undefined,
-    supplyCostPerBatch: (formData.get("supplyCostPerBatch") as string) || undefined,
-  });
-
-  revalidatePath("/admin/products");
-  redirect("/admin/products");
 }
 
 export default function NewProductPage() {

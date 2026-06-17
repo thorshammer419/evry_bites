@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useActionState } from "react";
 import Link from "next/link";
 import { validateProductImage, ImageValidationError } from "../../../lib/product-image";
 
+type ActionState = { error?: string } | null;
+
 interface ProductFormProps {
-  action: (formData: FormData) => Promise<void>;
+  action: (prevState: ActionState, formData: FormData) => Promise<ActionState>;
   defaultValues?: {
     name?: string;
     description?: string;
@@ -25,6 +27,7 @@ export default function ProductForm({
   defaultValues = {},
   submitLabel = "Save Product",
 }: ProductFormProps) {
+  const [state, formAction, isPending] = useActionState(action, null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(
     defaultValues.imageUrl ?? null
   );
@@ -50,7 +53,7 @@ export default function ProductForm({
   }
 
   return (
-    <form action={action} encType="multipart/form-data" className="space-y-5">
+    <form action={formAction} encType="multipart/form-data" className="space-y-5">
       <div>
         <label htmlFor="name" className="block text-sm font-medium text-amber-900 mb-1">
           Product Name
@@ -205,12 +208,19 @@ export default function ProductForm({
         </label>
       </div>
 
+      {state?.error && (
+        <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+          {state.error}
+        </div>
+      )}
+
       <div className="flex flex-col gap-3 pt-2">
         <button
           type="submit"
-          className="w-full bg-amber-800 text-white px-4 py-3 rounded-xl font-semibold hover:bg-amber-700 active:bg-amber-900 transition-colors"
+          disabled={isPending}
+          className="w-full bg-amber-800 text-white px-4 py-3 rounded-xl font-semibold hover:bg-amber-700 active:bg-amber-900 transition-colors disabled:opacity-60"
         >
-          {submitLabel}
+          {isPending ? "Saving…" : submitLabel}
         </button>
         <Link
           href="/admin/products"
