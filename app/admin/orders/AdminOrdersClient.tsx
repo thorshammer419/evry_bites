@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import type { FulfillmentType, OrderStatus, PaymentMethod } from "@prisma/client";
-import Link from "next/link";
 import { trpc } from "../../../lib/trpc/react";
 import { nextStatuses } from "../../../lib/order-lifecycle";
 
@@ -193,7 +192,7 @@ export function AdminOrdersClient() {
   const { data: orders, isLoading, isError } = trpc.orders.listAll.useQuery();
 
   return (
-    <div className="min-h-screen bg-amber-50 px-4 py-6">
+    <div className="px-4 py-6">
       <div className="max-w-lg mx-auto">
         <div className="mb-6 flex items-center justify-between">
           <div>
@@ -203,20 +202,6 @@ export function AdminOrdersClient() {
                 {orders.length} total
               </p>
             )}
-          </div>
-          <div className="flex gap-2">
-            <Link
-              href="/admin/users"
-              className="border border-amber-200 text-amber-800 px-3 py-2 rounded-xl text-sm font-medium hover:bg-amber-50 transition-colors"
-            >
-              Customers →
-            </Link>
-            <Link
-              href="/admin/products"
-              className="border border-amber-200 text-amber-800 px-3 py-2 rounded-xl text-sm font-medium hover:bg-amber-50 transition-colors"
-            >
-              Products →
-            </Link>
           </div>
         </div>
 

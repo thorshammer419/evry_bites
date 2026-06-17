@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import Link from "next/link";
 import { approveUser, revokeUser } from "./actions";
 
 type ClerkUser = {
@@ -71,19 +70,11 @@ function UserRow({ user }: { user: ClerkUser }) {
 
 export function AdminUsersClient({ users }: { users: ClerkUser[] }) {
   return (
-    <div className="min-h-screen bg-amber-50 px-4 py-6">
+    <div className="px-4 py-6">
       <div className="max-w-lg mx-auto">
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-amber-900">Customers</h1>
-            <p className="text-sm text-amber-600 mt-0.5">{users.length} accounts</p>
-          </div>
-          <Link
-            href="/admin/orders"
-            className="border border-amber-200 text-amber-800 px-3 py-2 rounded-xl text-sm font-medium hover:bg-amber-50 transition-colors"
-          >
-            Orders →
-          </Link>
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-amber-900">Customers</h1>
+          <p className="text-sm text-amber-600 mt-0.5">{users.length} accounts</p>
         </div>
 
         {users.length === 0 && (

@@ -20,17 +20,10 @@ export default async function AdminProductsPage() {
   const products = await caller.products.listAll();
 
   return (
-    <div className="min-h-screen bg-amber-50 px-4 py-6">
+    <div className="px-4 py-6">
       <div className="max-w-lg mx-auto">
-        {/* Header */}
         <div className="mb-6">
-          <Link
-            href="/admin/orders"
-            className="text-sm text-amber-600 hover:text-amber-800 transition-colors"
-          >
-            ← Orders
-          </Link>
-          <div className="flex items-center justify-between mt-3">
+          <div className="flex items-center justify-between">
             <h1 className="text-2xl font-bold text-amber-900">Products</h1>
             <Link
               href="/admin/products/new"

@@ -36,7 +36,7 @@ async function createProductAction(formData: FormData) {
 
 export default function NewProductPage() {
   return (
-    <div className="min-h-screen bg-amber-50 px-4 py-6">
+    <div className="px-4 py-6">
       <div className="max-w-lg mx-auto">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-amber-900">New Product</h1>
