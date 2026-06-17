@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { FulfillmentType, PaymentMethod } from "@prisma/client";
 import { db } from "../../../../lib/db";
 import { CustomerHeader } from "../../../components/CustomerHeader";
+import { CustomerFooter } from "../../../components/CustomerFooter";
 
 interface ConfirmationPageProps {
   params: Promise<{ orderId: string }>;
@@ -165,6 +166,7 @@ export default async function OrderConfirmationPage({
           </Link>
         </div>
       </main>
+      <CustomerFooter />
     </div>
   );
 }

@@ -7,6 +7,7 @@ import type { Product } from "@prisma/client";
 import { PayPalScriptProvider, PayPalButtons } from "@paypal/react-paypal-js";
 import { useUser, SignInButton, SignUpButton, UserButton } from "@clerk/nextjs";
 import { CustomerHeader } from "../components/CustomerHeader";
+import { CustomerFooter } from "../components/CustomerFooter";
 import { CartProvider, useCart } from "../../lib/cart";
 import { trpc } from "../../lib/trpc/react";
 
@@ -472,6 +473,7 @@ function OrderFormInner({ products }: OrderFormClientProps) {
           )}
         </form>
       </main>
+      <CustomerFooter />
     </div>
   );
 }
