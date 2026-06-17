@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { MenuClient } from "./components/MenuClient";
 import { CustomerHeader } from "./components/CustomerHeader";
+import { ScrollHint } from "./components/ScrollHint";
 import { appRouter } from "../server/routers/_app";
 import { createCallerFactory } from "../server/trpc";
 import { NullNotifier } from "../lib/null-notifier";
@@ -17,8 +18,9 @@ export default async function Home() {
       <CustomerHeader />
 
       <main className="max-w-2xl mx-auto px-4 py-6">
-<MenuClient products={products} />
+        <MenuClient products={products} />
       </main>
+      <ScrollHint />
     </div>
   );
 }
