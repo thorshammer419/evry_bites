@@ -2,7 +2,6 @@ export const dynamic = "force-dynamic";
 
 import { MenuClient } from "./components/MenuClient";
 import { CustomerHeader } from "./components/CustomerHeader";
-import { CustomerFooter } from "./components/CustomerFooter";
 import { appRouter } from "../server/routers/_app";
 import { createCallerFactory } from "../server/trpc";
 import { NullNotifier } from "../lib/null-notifier";
@@ -25,7 +24,6 @@ export default async function Home() {
 
         <MenuClient products={products} />
       </main>
-      <CustomerFooter />
     </div>
   );
 }

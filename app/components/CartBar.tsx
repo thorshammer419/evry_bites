@@ -25,7 +25,15 @@ export function CartBar({ products }: CartBarProps) {
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-20 bg-white border-t border-amber-200 shadow-lg">
-      <div className="max-w-2xl mx-auto px-4 py-3">
+      <div className="max-w-2xl mx-auto px-4 pt-3 pb-3">
+        <div className="mb-3 p-2 bg-amber-50 border border-amber-200 rounded-lg">
+          <p className="text-xs font-bold text-amber-900">DISCLAIMER:</p>
+          <p className="text-xs text-amber-700 leading-relaxed">
+            This product was not produced in a commercial kitchen. It has been home-processed in a
+            kitchen that may also process common food allergens such as tree nuts, peanuts, eggs,
+            soy, wheat, milk, fish, and crustacean shellfish.
+          </p>
+        </div>
         <div className="space-y-1 mb-3 max-h-32 overflow-y-auto">
           {lineItems.map(({ product, quantity, subtotal }) => (
             <div
