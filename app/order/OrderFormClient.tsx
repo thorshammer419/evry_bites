@@ -109,8 +109,9 @@ function OrderFormInner({ products }: OrderFormClientProps) {
       });
     });
     return () => { if (ac) google.maps.event.clearInstanceListeners(ac); };
+  // hydrated ensures the cart has loaded and the full form (with the address input) is rendered
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [hydrated]);
 
   const hasAutoFilled = useRef(false);
   useEffect(() => {
