@@ -13,7 +13,7 @@ export default async function AdminLayout({
   const isAuthenticated = sessionCookie === expected;
 
   return (
-    <div className="min-h-screen bg-amber-50 flex flex-col">
+    <div className="min-h-screen bg-sky-50 flex flex-col">
       {isAuthenticated && <AdminNav />}
       <main className="flex-1">{children}</main>
     </div>

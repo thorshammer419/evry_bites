@@ -56,11 +56,11 @@ export default async function EditProductPage({ params }: EditProductPageProps) 
     <div className="px-4 py-6">
       <div className="max-w-lg mx-auto">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-amber-900">Edit Product</h1>
-          <p className="text-sm text-amber-600 mt-1">{product.name}</p>
+          <h1 className="text-2xl font-bold text-blue-900">Edit Product</h1>
+          <p className="text-sm text-blue-600 mt-1">{product.name}</p>
         </div>
 
-        <div className="bg-white rounded-3xl shadow-sm border border-amber-100 p-6">
+        <div className="bg-white rounded-3xl shadow-sm border border-sky-100 p-6">
           <ProductForm
             action={updateProductAction}
             defaultValues={{

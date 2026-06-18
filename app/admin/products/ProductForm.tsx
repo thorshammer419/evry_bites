@@ -56,7 +56,7 @@ export default function ProductForm({
   return (
     <form action={formAction} encType="multipart/form-data" className="space-y-5">
       <div>
-        <label htmlFor="name" className="block text-sm font-medium text-amber-900 mb-1">
+        <label htmlFor="name" className="block text-sm font-medium text-blue-900 mb-1">
           Product Name
         </label>
         <input
@@ -65,13 +65,13 @@ export default function ProductForm({
           type="text"
           required
           defaultValue={defaultValues.name ?? ""}
-          className="w-full rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900 placeholder-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-400"
+          className="w-full rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-blue-900 placeholder-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400"
           placeholder="e.g. Chocolate Chip Cookies"
         />
       </div>
 
       <div>
-        <label htmlFor="description" className="block text-sm font-medium text-amber-900 mb-1">
+        <label htmlFor="description" className="block text-sm font-medium text-blue-900 mb-1">
           Description
         </label>
         <textarea
@@ -80,14 +80,14 @@ export default function ProductForm({
           required
           rows={3}
           defaultValue={defaultValues.description ?? ""}
-          className="w-full rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900 placeholder-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"
+          className="w-full rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-blue-900 placeholder-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400 resize-none"
           placeholder="Describe this product..."
         />
       </div>
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label htmlFor="price" className="block text-sm font-medium text-amber-900 mb-1">
+          <label htmlFor="price" className="block text-sm font-medium text-blue-900 mb-1">
             Price ($)
           </label>
           <input
@@ -98,13 +98,13 @@ export default function ProductForm({
             min="0"
             required
             defaultValue={defaultValues.price ?? ""}
-            className="w-full rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900 placeholder-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-400"
+            className="w-full rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-blue-900 placeholder-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400"
             placeholder="0.00"
           />
         </div>
 
         <div>
-          <label htmlFor="batchSize" className="block text-sm font-medium text-amber-900 mb-1">
+          <label htmlFor="batchSize" className="block text-sm font-medium text-blue-900 mb-1">
             Batch Size
           </label>
           <input
@@ -115,14 +115,14 @@ export default function ProductForm({
             step="1"
             required
             defaultValue={defaultValues.batchSize ?? ""}
-            className="w-full rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900 placeholder-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-400"
+            className="w-full rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-blue-900 placeholder-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400"
             placeholder="12"
           />
         </div>
       </div>
 
       <div>
-        <label htmlFor="unitLabel" className="block text-sm font-medium text-amber-900 mb-1">
+        <label htmlFor="unitLabel" className="block text-sm font-medium text-blue-900 mb-1">
           Unit Label
         </label>
         <input
@@ -131,14 +131,14 @@ export default function ProductForm({
           type="text"
           required
           defaultValue={defaultValues.unitLabel ?? ""}
-          className="w-full rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900 placeholder-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-400"
+          className="w-full rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-blue-900 placeholder-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400"
           placeholder="e.g. dozen, box, bag"
         />
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-amber-900 mb-1">
-          Product Image <span className="text-amber-500 font-normal">(optional)</span>
+        <label className="block text-sm font-medium text-blue-900 mb-1">
+          Product Image <span className="text-sky-500 font-normal">(optional)</span>
         </label>
 
         {previewUrl && (
@@ -146,7 +146,7 @@ export default function ProductForm({
           <img
             src={previewUrl}
             alt="Product preview"
-            className="mb-3 h-32 w-32 rounded-xl object-cover border border-amber-200"
+            className="mb-3 h-32 w-32 rounded-xl object-cover border border-sky-200"
           />
         )}
 
@@ -156,7 +156,7 @@ export default function ProductForm({
           type="file"
           accept="image/jpeg,image/png,image/webp"
           onChange={handleFileChange}
-          className="w-full rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-amber-900 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-amber-800 file:px-3 file:py-1 file:text-sm file:text-white file:cursor-pointer"
+          className="w-full rounded-xl border border-sky-200 bg-sky-50 px-4 py-2 text-blue-900 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-blue-900 file:px-3 file:py-1 file:text-sm file:text-white file:cursor-pointer"
         />
 
         {fileError && (
@@ -167,22 +167,22 @@ export default function ProductForm({
       </div>
 
       <div>
-        <label htmlFor="ingredients" className="block text-sm font-medium text-amber-900 mb-1">
-          Ingredients <span className="text-amber-500 font-normal">(optional)</span>
+        <label htmlFor="ingredients" className="block text-sm font-medium text-blue-900 mb-1">
+          Ingredients <span className="text-sky-500 font-normal">(optional)</span>
         </label>
         <textarea
           id="ingredients"
           name="ingredients"
           rows={3}
           defaultValue={defaultValues.ingredients ?? ""}
-          className="w-full rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900 placeholder-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"
+          className="w-full rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-blue-900 placeholder-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400 resize-none"
           placeholder="e.g. flour, sugar, butter, eggs, vanilla extract (contains gluten, dairy, eggs)"
         />
       </div>
 
       <div>
-        <label htmlFor="supplyCostPerBatch" className="block text-sm font-medium text-amber-900 mb-1">
-          Supply Cost per Batch ($) <span className="text-amber-500 font-normal">(optional)</span>
+        <label htmlFor="supplyCostPerBatch" className="block text-sm font-medium text-blue-900 mb-1">
+          Supply Cost per Batch ($) <span className="text-sky-500 font-normal">(optional)</span>
         </label>
         <input
           id="supplyCostPerBatch"
@@ -191,14 +191,14 @@ export default function ProductForm({
           step="0.01"
           min="0"
           defaultValue={defaultValues.supplyCostPerBatch ?? ""}
-          className="w-full rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900 placeholder-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-400"
+          className="w-full rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-blue-900 placeholder-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400"
           placeholder="0.00"
         />
       </div>
 
       <div>
-        <label htmlFor="unitsAvailable" className="block text-sm font-medium text-amber-900 mb-1">
-          Units Available <span className="text-amber-500 font-normal">(leave blank for unlimited)</span>
+        <label htmlFor="unitsAvailable" className="block text-sm font-medium text-blue-900 mb-1">
+          Units Available <span className="text-sky-500 font-normal">(leave blank for unlimited)</span>
         </label>
         <input
           id="unitsAvailable"
@@ -207,7 +207,7 @@ export default function ProductForm({
           min="0"
           step="1"
           defaultValue={defaultValues.unitsAvailable != null ? String(defaultValues.unitsAvailable) : ""}
-          className="w-full rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900 placeholder-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-400"
+          className="w-full rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-blue-900 placeholder-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400"
           placeholder="Unlimited"
         />
       </div>
@@ -218,9 +218,9 @@ export default function ProductForm({
           name="active"
           type="checkbox"
           defaultChecked={defaultValues.active ?? true}
-          className="h-5 w-5 rounded border-amber-300 text-amber-800 focus:ring-amber-400"
+          className="h-5 w-5 rounded border-sky-300 text-blue-800 focus:ring-sky-400"
         />
-        <label htmlFor="active" className="text-sm font-medium text-amber-900">
+        <label htmlFor="active" className="text-sm font-medium text-blue-900">
           Active (visible to customers)
         </label>
       </div>
@@ -235,13 +235,13 @@ export default function ProductForm({
         <button
           type="submit"
           disabled={isPending}
-          className="w-full bg-amber-800 text-white px-4 py-3 rounded-xl font-semibold hover:bg-amber-700 active:bg-amber-900 transition-colors disabled:opacity-60"
+          className="w-full bg-blue-900 text-white px-4 py-3 rounded-xl font-semibold hover:bg-blue-800 active:bg-blue-950 transition-colors disabled:opacity-60"
         >
           {isPending ? "Saving…" : submitLabel}
         </button>
         <Link
           href="/admin/products"
-          className="w-full text-center border border-amber-200 text-amber-800 px-4 py-3 rounded-xl font-medium hover:bg-amber-50 transition-colors"
+          className="w-full text-center border border-sky-200 text-blue-800 px-4 py-3 rounded-xl font-medium hover:bg-sky-50 transition-colors"
         >
           Cancel
         </Link>

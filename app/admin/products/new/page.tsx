@@ -46,11 +46,11 @@ export default function NewProductPage() {
     <div className="px-4 py-6">
       <div className="max-w-lg mx-auto">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-amber-900">New Product</h1>
-          <p className="text-sm text-amber-600 mt-1">Add a new product to your menu</p>
+          <h1 className="text-2xl font-bold text-blue-900">New Product</h1>
+          <p className="text-sm text-blue-600 mt-1">Add a new product to your menu</p>
         </div>
 
-        <div className="bg-white rounded-3xl shadow-sm border border-amber-100 p-6">
+        <div className="bg-white rounded-3xl shadow-sm border border-sky-100 p-6">
           <ProductForm action={createProductAction} submitLabel="Create Product" />
         </div>
       </div>

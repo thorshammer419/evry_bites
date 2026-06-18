@@ -14,31 +14,26 @@ export function AdminNav() {
   const pathname = usePathname();
 
   return (
-    <header className="bg-amber-900 text-white shadow-md">
-      <div className="max-w-7xl mx-auto px-4">
-        <div className="flex items-center h-14 gap-1">
-          <span className="font-bold text-amber-100 mr-4 text-lg tracking-tight">
-            EvryBites Admin
-          </span>
-          <nav className="flex items-center gap-1">
-            {NAV_LINKS.map(({ href, label }) => {
-              const active = pathname.startsWith(href);
-              return (
-                <Link
-                  key={href}
-                  href={href}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                    active
-                      ? "bg-amber-700 text-white"
-                      : "text-amber-200 hover:bg-amber-800 hover:text-white"
-                  }`}
-                >
-                  {label}
-                </Link>
-              );
-            })}
-          </nav>
-        </div>
+    <header className="bg-white border-b-4 border-blue-900 sticky top-0 z-10">
+      <div className="max-w-2xl mx-auto px-4">
+        <nav className="flex items-center justify-center h-14 gap-1">
+          {NAV_LINKS.map(({ href, label }) => {
+            const active = pathname.startsWith(href);
+            return (
+              <Link
+                key={href}
+                href={href}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  active
+                    ? "bg-blue-900 text-white"
+                    : "text-blue-700 hover:bg-sky-100 hover:text-blue-900"
+                }`}
+              >
+                {label}
+              </Link>
+            );
+          })}
+        </nav>
       </div>
     </header>
   );

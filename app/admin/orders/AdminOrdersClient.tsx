@@ -91,25 +91,25 @@ function CancelModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5">
-        <h2 className="text-lg font-bold text-amber-900 mb-1">Cancel Order?</h2>
-        <p className="text-sm text-amber-700 mb-4">
+        <h2 className="text-lg font-bold text-blue-900 mb-1">Cancel Order?</h2>
+        <p className="text-sm text-blue-700 mb-4">
           The customer will be notified. This cannot be undone.
         </p>
-        <label className="block text-sm font-medium text-amber-800 mb-1">
-          Reason <span className="text-amber-400 font-normal">(optional)</span>
+        <label className="block text-sm font-medium text-blue-800 mb-1">
+          Reason <span className="text-sky-400 font-normal">(optional)</span>
         </label>
         <textarea
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           rows={3}
           placeholder="e.g. Item no longer available"
-          className="w-full rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none mb-4"
+          className="w-full rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-blue-900 focus:outline-none focus:ring-2 focus:ring-sky-400 resize-none mb-4"
         />
         <div className="flex gap-2">
           <button
             onClick={onClose}
             disabled={isPending}
-            className="flex-1 border border-amber-200 text-amber-800 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-amber-50 transition-colors disabled:opacity-60"
+            className="flex-1 border border-sky-200 text-blue-800 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-sky-50 transition-colors disabled:opacity-60"
           >
             Keep Order
           </button>
@@ -148,7 +148,7 @@ function OrderRow({ order }: { order: OrderWithItems }) {
   });
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-amber-100 overflow-hidden">
+    <div className="bg-white rounded-2xl shadow-sm border border-sky-100 overflow-hidden">
       <button
         className="w-full text-left px-4 py-4 flex items-start gap-3"
         onClick={() => setExpanded((e) => !e)}
@@ -156,33 +156,33 @@ function OrderRow({ order }: { order: OrderWithItems }) {
       >
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-semibold text-amber-900">#{ref}</span>
+            <span className="font-semibold text-blue-900">#{ref}</span>
             <span
               className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[order.status]}`}
             >
               {STATUS_LABELS[order.status]}
             </span>
           </div>
-          <p className="text-sm text-amber-700 mt-0.5">{[order.firstName, order.lastName].filter(Boolean).join(" ") || order.customerEmail}</p>
-          <p className="text-xs text-amber-500 mt-0.5">
+          <p className="text-sm text-blue-700 mt-0.5">{[order.firstName, order.lastName].filter(Boolean).join(" ") || order.customerEmail}</p>
+          <p className="text-xs text-sky-500 mt-0.5">
             {order.fulfillmentType === "local_delivery" ? "Local Delivery" : "Shipping"} · {date}
           </p>
         </div>
-        <span className="text-amber-400 text-sm mt-1">{expanded ? "▲" : "▼"}</span>
+        <span className="text-sky-400 text-sm mt-1">{expanded ? "▲" : "▼"}</span>
       </button>
 
       {expanded && (
-        <div className="border-t border-amber-100 px-4 pb-4 space-y-4">
+        <div className="border-t border-sky-100 px-4 pb-4 space-y-4">
           {/* Contact */}
           <div className="pt-3">
-            <p className="text-xs font-semibold text-amber-500 uppercase tracking-wide mb-2">
+            <p className="text-xs font-semibold text-sky-500 uppercase tracking-wide mb-2">
               Customer
             </p>
-            <p className="text-sm text-amber-900">{[order.firstName, order.lastName].filter(Boolean).join(" ") || "—"}</p>
-            <p className="text-sm text-amber-700">{order.customerEmail}</p>
-            <p className="text-sm text-amber-700">{order.customerPhone}</p>
+            <p className="text-sm text-blue-900">{[order.firstName, order.lastName].filter(Boolean).join(" ") || "—"}</p>
+            <p className="text-sm text-blue-700">{order.customerEmail}</p>
+            <p className="text-sm text-blue-700">{order.customerPhone}</p>
             {order.addressLine1 && (
-              <p className="text-sm text-amber-700 mt-1">
+              <p className="text-sm text-blue-700 mt-1">
                 {order.addressLine1}{order.city ? `, ${order.city}` : ""}{order.state ? `, ${order.state}` : ""}{order.zip ? ` ${order.zip}` : ""}
               </p>
             )}
@@ -190,39 +190,39 @@ function OrderRow({ order }: { order: OrderWithItems }) {
 
           {/* Order items */}
           <div>
-            <p className="text-xs font-semibold text-amber-500 uppercase tracking-wide mb-2">
+            <p className="text-xs font-semibold text-sky-500 uppercase tracking-wide mb-2">
               Items
             </p>
             <div className="space-y-1">
               {order.orderItems.map((item) => (
                 <div key={item.id} className="flex justify-between text-sm">
-                  <span className="text-amber-800">
+                  <span className="text-blue-800">
                     {item.product.name}{" "}
-                    <span className="text-amber-500">
+                    <span className="text-sky-500">
                       × {item.quantity} {item.product.unitLabel}
                     </span>
                   </span>
-                  <span className="font-medium text-amber-900">
+                  <span className="font-medium text-blue-900">
                     ${Number(item.subtotal).toFixed(2)}
                   </span>
                 </div>
               ))}
             </div>
-            <div className="flex justify-between text-sm font-semibold text-amber-900 border-t border-amber-100 mt-2 pt-2">
+            <div className="flex justify-between text-sm font-semibold text-blue-900 border-t border-sky-100 mt-2 pt-2">
               <span>Total</span>
               <span>${Number(order.totalAmount).toFixed(2)}</span>
             </div>
           </div>
 
           {/* Payment + notes */}
-          <div className="text-sm text-amber-700 space-y-1">
+          <div className="text-sm text-blue-700 space-y-1">
             <p>
-              <span className="font-medium text-amber-900">Payment:</span>{" "}
+              <span className="font-medium text-blue-900">Payment:</span>{" "}
               {PAYMENT_LABELS[order.paymentMethod]}
             </p>
             {order.notes && (
               <p>
-                <span className="font-medium text-amber-900">Notes:</span>{" "}
+                <span className="font-medium text-blue-900">Notes:</span>{" "}
                 {order.notes}
               </p>
             )}
@@ -237,7 +237,7 @@ function OrderRow({ order }: { order: OrderWithItems }) {
                   updateStatus.mutate({ id: order.id, status: next as Exclude<OrderStatus, "received" | "pending_payment" | "cancelled"> })
                 }
                 disabled={updateStatus.isPending}
-                className="w-full bg-amber-800 text-white px-4 py-3 rounded-xl font-semibold text-sm hover:bg-amber-700 active:bg-amber-900 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                className="w-full bg-blue-900 text-white px-4 py-3 rounded-xl font-semibold text-sm hover:bg-blue-800 active:bg-blue-950 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {updateStatus.isPending ? "Updating..." : ADVANCE_LABELS[next]}
               </button>
@@ -287,9 +287,9 @@ export function AdminOrdersClient() {
       <div className="max-w-lg mx-auto">
         <div className="mb-4 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-amber-900">Orders</h1>
+            <h1 className="text-2xl font-bold text-blue-900">Orders</h1>
             {orders && (
-              <p className="text-sm text-amber-600 mt-0.5">
+              <p className="text-sm text-blue-600 mt-0.5">
                 {filtered.length} of {orders.length}
               </p>
             )}
@@ -303,15 +303,15 @@ export function AdminOrdersClient() {
             placeholder="Search by name, email, or order ID…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-xl border border-amber-200 bg-white px-4 py-2.5 text-sm text-amber-900 placeholder-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-400"
+            className="w-full rounded-xl border border-sky-200 bg-white px-4 py-2.5 text-sm text-blue-900 placeholder-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400"
           />
           <div className="flex gap-2 flex-wrap">
             <button
               onClick={() => setStatusFilter("all")}
               className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                 statusFilter === "all"
-                  ? "bg-amber-800 text-white"
-                  : "border border-amber-200 text-amber-700 hover:bg-amber-50"
+                  ? "bg-blue-900 text-white"
+                  : "border border-sky-200 text-blue-700 hover:bg-sky-50"
               }`}
             >
               All
@@ -322,8 +322,8 @@ export function AdminOrdersClient() {
                 onClick={() => setStatusFilter(s)}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                   statusFilter === s
-                    ? "bg-amber-800 text-white"
-                    : "border border-amber-200 text-amber-700 hover:bg-amber-50"
+                    ? "bg-blue-900 text-white"
+                    : "border border-sky-200 text-blue-700 hover:bg-sky-50"
                 }`}
               >
                 {STATUS_LABELS[s]}
@@ -333,7 +333,7 @@ export function AdminOrdersClient() {
         </div>
 
         {isLoading && (
-          <div className="text-center py-16 text-amber-500">
+          <div className="text-center py-16 text-sky-500">
             <p className="text-3xl mb-3">⏳</p>
             <p className="text-sm">Loading orders…</p>
           </div>
@@ -346,7 +346,7 @@ export function AdminOrdersClient() {
         )}
 
         {orders && filtered.length === 0 && (
-          <div className="text-center py-16 text-amber-500">
+          <div className="text-center py-16 text-sky-500">
             <p className="text-3xl mb-3">🧾</p>
             <p className="font-medium">{orders.length === 0 ? "No orders yet" : "No matches"}</p>
             <p className="text-sm mt-1">
