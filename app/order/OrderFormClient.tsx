@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { setOptions, importLibrary } from "@googlemaps/js-api-loader";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
@@ -65,8 +65,6 @@ function OrderFormInner({ products }: OrderFormClientProps) {
   const cashCheckApproved = Boolean(isSignedIn && user?.publicMetadata?.cashCheckApproved);
   const cashCheckPending = Boolean(isSignedIn && !cashCheckApproved && user?.unsafeMetadata?.cashCheckPending);
 
-  const addressInputRef = useRef<HTMLInputElement>(null);
-
   // Ref keeps the latest handler without causing the autocomplete to re-initialize
   const handlePlaceSelectedRef = useRef<(components: google.maps.GeocoderAddressComponent[]) => void>(() => {});
   handlePlaceSelectedRef.current = (components) => {
@@ -90,28 +88,33 @@ function OrderFormInner({ products }: OrderFormClientProps) {
     }
   };
 
-  useEffect(() => {
+  const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
+  const addressCallbackRef = useCallback((node: HTMLInputElement | null) => {
+    if (node === null) {
+      if (autocompleteRef.current) {
+        google.maps.event.clearInstanceListeners(autocompleteRef.current);
+        autocompleteRef.current = null;
+      }
+      return;
+    }
+    if (autocompleteRef.current) return;
     const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-    if (!apiKey || !addressInputRef.current) return;
-    let ac: google.maps.places.Autocomplete;
+    if (!apiKey) return;
     setOptions({ key: apiKey });
     importLibrary("places").then((lib) => {
-      if (!addressInputRef.current) return;
+      if (!node.isConnected || autocompleteRef.current) return;
       const { Autocomplete } = lib as google.maps.PlacesLibrary;
-      ac = new Autocomplete(addressInputRef.current, {
+      autocompleteRef.current = new Autocomplete(node, {
         types: ["address"],
         componentRestrictions: { country: "us" },
         fields: ["address_components"],
       });
-      ac.addListener("place_changed", () => {
-        const place = ac.getPlace();
+      autocompleteRef.current.addListener("place_changed", () => {
+        const place = autocompleteRef.current!.getPlace();
         if (place.address_components) handlePlaceSelectedRef.current(place.address_components);
       });
     });
-    return () => { if (ac) google.maps.event.clearInstanceListeners(ac); };
-  // hydrated ensures the cart has loaded and the full form (with the address input) is rendered
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hydrated]);
+  }, []);
 
   const hasAutoFilled = useRef(false);
   useEffect(() => {
@@ -354,7 +357,7 @@ function OrderFormInner({ products }: OrderFormClientProps) {
                 <label htmlFor="addressLine1" className={labelClass}>
                   {fulfillmentType === "local_delivery" ? "Delivery Address" : "Shipping Address"}
                 </label>
-                <input id="addressLine1" ref={addressInputRef} type="text" required value={addressLine1}
+                <input id="addressLine1" ref={addressCallbackRef} type="text" required value={addressLine1}
                   onChange={(e) => setAddressLine1(e.target.value)}
                   className={inputClass} placeholder="Start typing your address…" autoComplete="new-password" />
               </div>
