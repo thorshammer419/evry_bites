@@ -9,11 +9,17 @@ interface CustomerHeaderProps {
   subtitle?: string;
   backHref?: string;
   showLogo?: boolean;
+  bannerSrc?: string;
+  bannerWidth?: number;
+  bannerHeight?: number;
 }
 
 export function CustomerHeader({
   backHref,
   showLogo = true,
+  bannerSrc,
+  bannerWidth,
+  bannerHeight,
 }: CustomerHeaderProps) {
   const { isSignedIn, isLoaded } = useUser();
 
@@ -51,6 +57,15 @@ export function CustomerHeader({
               src="/fresh_baked_banner.png"
               alt="Fresh baked to order"
               width={152} height={58}
+              className="h-[58px] w-auto"
+            />
+          </div>
+        ) : bannerSrc ? (
+          <div className="flex-1 flex justify-center items-center">
+            <Image
+              src={bannerSrc}
+              alt=""
+              width={bannerWidth ?? 1386} height={bannerHeight ?? 517}
               className="h-[58px] w-auto"
             />
           </div>

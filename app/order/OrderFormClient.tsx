@@ -268,7 +268,7 @@ function OrderFormInner({ products }: OrderFormClientProps) {
 
   return (
     <div className="min-h-screen bg-bakery-pattern">
-      <CustomerHeader backHref="/" showLogo={false} />
+      <CustomerHeader backHref="/" showLogo={false} bannerSrc="/knead_your_dough_banner.png" bannerWidth={1386} bannerHeight={517} />
 
       <main className="max-w-2xl mx-auto px-4 py-6 pb-12">
         {removedItems.length > 0 && (
