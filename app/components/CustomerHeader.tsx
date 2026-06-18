@@ -35,11 +35,11 @@ export function CustomerHeader({
                 className="[filter:drop-shadow(6px_8px_10px_rgba(0,0,0,0.55))]"
               />
             </Link>
-            <Link href="/story" className="absolute top-[10px] left-[59px] z-10" aria-label="Click for our story">
+            <Link href="/story" className="absolute top-0 left-[59px] z-10" aria-label="Click for our story">
               <Image
                 src="/click_for_my_story.png"
                 alt="Click for our story"
-                width={76} height={28}
+                width={1144} height={421}
                 className="h-7 w-auto"
               />
             </Link>
