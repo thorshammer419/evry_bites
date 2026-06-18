@@ -35,7 +35,7 @@ export function CustomerHeader({
                 className="[filter:drop-shadow(6px_8px_10px_rgba(0,0,0,0.55))]"
               />
             </Link>
-            <Link href="/story" className="absolute top-0 left-[59px] z-10 w-max" aria-label="Click for our story">
+            <Link href="/story" className="absolute -top-[6%] left-[73%] z-10 w-max" aria-label="Click for our story">
               <Image
                 src="/click_for_my_story.png"
                 alt="Click for our story"
