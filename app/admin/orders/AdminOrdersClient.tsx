@@ -275,12 +275,27 @@ export function AdminOrdersClient() {
   const { data: orders, isLoading, isError } = trpc.orders.listAll.useQuery();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<OrderStatus | "all">("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
-  const filtered = (orders ?? []).filter(
-    (o) =>
-      (statusFilter === "all" || o.status === statusFilter) &&
-      matchesSearch(o, search)
-  );
+  const filtered = (orders ?? []).filter((o) => {
+    if (statusFilter !== "all" && o.status !== statusFilter) return false;
+    if (!matchesSearch(o, search)) return false;
+    const orderDate = new Date(o.createdAt);
+    if (dateFrom) {
+      const from = new Date(dateFrom);
+      from.setHours(0, 0, 0, 0);
+      if (orderDate < from) return false;
+    }
+    if (dateTo) {
+      const to = new Date(dateTo);
+      to.setHours(23, 59, 59, 999);
+      if (orderDate > to) return false;
+    }
+    return true;
+  });
+
+  const hasDateFilter = dateFrom || dateTo;
 
   return (
     <div className="px-4 py-6">
@@ -305,6 +320,29 @@ export function AdminOrdersClient() {
             onChange={(e) => setSearch(e.target.value)}
             className="w-full rounded-xl border border-sky-200 bg-white px-4 py-2.5 text-sm text-blue-900 placeholder-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400"
           />
+          <div className="flex items-center gap-2">
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="flex-1 rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm text-blue-900 focus:outline-none focus:ring-2 focus:ring-sky-400"
+            />
+            <span className="text-sky-400 text-sm shrink-0">to</span>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="flex-1 rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm text-blue-900 focus:outline-none focus:ring-2 focus:ring-sky-400"
+            />
+            {hasDateFilter && (
+              <button
+                onClick={() => { setDateFrom(""); setDateTo(""); }}
+                className="text-xs text-blue-600 hover:text-blue-900 shrink-0 underline"
+              >
+                Clear
+              </button>
+            )}
+          </div>
           <div className="flex gap-2 flex-wrap">
             <button
               onClick={() => setStatusFilter("all")}
