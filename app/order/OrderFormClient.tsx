@@ -72,7 +72,7 @@ function OrderFormInner({ products }: OrderFormClientProps) {
     for (const c of components) {
       const t = c.types[0];
       if (t === "street_number") streetNumber = c.long_name;
-      else if (t === "route") route = c.short_name;
+      else if (t === "route") route = c.long_name;
       else if (t === "locality") newCity = c.long_name;
       else if (t === "administrative_area_level_1") newState = c.short_name;
       else if (t === "postal_code") newZip = c.long_name;
