@@ -25,6 +25,12 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+/* Ensure Google Places Autocomplete dropdown renders above everything */
+.pac-container {
+  z-index: 9999 !important;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
 .bg-bakery-pattern {
   background-color: #dbeafe;
   background-image: url('/bg-pattern.png');
