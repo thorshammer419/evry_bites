@@ -88,6 +88,15 @@ function OrderFormInner({ products }: OrderFormClientProps) {
     }
   };
 
+  // Preload the Maps library as soon as the form mounts (before cart hydrates),
+  // so it's ready before the user can click the address field.
+  useEffect(() => {
+    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+    if (!apiKey) return;
+    setOptions({ key: apiKey });
+    importLibrary("places");
+  }, []);
+
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
   const addressCallbackRef = useCallback((node: HTMLInputElement | null) => {
     if (node === null) {
@@ -98,9 +107,6 @@ function OrderFormInner({ products }: OrderFormClientProps) {
       return;
     }
     if (autocompleteRef.current) return;
-    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-    if (!apiKey) return;
-    setOptions({ key: apiKey });
     importLibrary("places").then((lib) => {
       if (!node.isConnected || autocompleteRef.current) return;
       const { Autocomplete } = lib as google.maps.PlacesLibrary;
