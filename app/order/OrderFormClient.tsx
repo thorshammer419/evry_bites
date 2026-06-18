@@ -359,7 +359,7 @@ function OrderFormInner({ products }: OrderFormClientProps) {
                 </label>
                 <input id="addressLine1" ref={addressCallbackRef} type="text" required value={addressLine1}
                   onChange={(e) => setAddressLine1(e.target.value)}
-                  className={inputClass} placeholder="Start typing your address…" autoComplete="new-password" />
+                  className={inputClass} placeholder="Start typing your address…" autoComplete="off" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
