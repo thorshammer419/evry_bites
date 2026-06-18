@@ -97,8 +97,19 @@ function OrderFormInner({ products }: OrderFormClientProps) {
     importLibrary("places");
   }, []);
 
+  const addressInputRef = useRef<HTMLInputElement>(null);
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
+
+  // Sync addressLine1 state → DOM only when it changes from an external source
+  // (Clerk autofill, place selection). Guard prevents cursor-reset during typing.
+  useEffect(() => {
+    if (addressInputRef.current && addressInputRef.current.value !== addressLine1) {
+      addressInputRef.current.value = addressLine1;
+    }
+  }, [addressLine1]);
+
   const addressCallbackRef = useCallback((node: HTMLInputElement | null) => {
+    addressInputRef.current = node;
     if (node === null) {
       if (autocompleteRef.current) {
         google.maps.event.clearInstanceListeners(autocompleteRef.current);
@@ -363,7 +374,7 @@ function OrderFormInner({ products }: OrderFormClientProps) {
                 <label htmlFor="addressLine1" className={labelClass}>
                   {fulfillmentType === "local_delivery" ? "Delivery Address" : "Shipping Address"}
                 </label>
-                <input id="addressLine1" ref={addressCallbackRef} type="text" required value={addressLine1}
+                <input id="addressLine1" ref={addressCallbackRef} type="text" required
                   onChange={(e) => setAddressLine1(e.target.value)}
                   className={inputClass} placeholder="Start typing your address…" autoComplete="off" />
               </div>
