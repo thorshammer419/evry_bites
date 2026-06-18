@@ -17,7 +17,7 @@ export default async function Home() {
     <div className="min-h-screen bg-bakery-pattern">
       <CustomerHeader />
 
-      <main className="max-w-2xl mx-auto px-4 pt-6 pb-[220px]">
+      <main className="max-w-2xl mx-auto px-4 pt-6 pb-[170px]">
         <MenuClient products={products} />
       </main>
       <ScrollHint />
