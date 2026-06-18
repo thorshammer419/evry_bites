@@ -88,13 +88,13 @@ function OrderFormInner({ products }: OrderFormClientProps) {
     }
   };
 
-  // Preload the Maps library as soon as the form mounts (before cart hydrates),
-  // so it's ready before the user can click the address field.
   useEffect(() => {
     const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-    if (!apiKey) return;
+    if (!apiKey) { console.error("[Places] NEXT_PUBLIC_GOOGLE_MAPS_API_KEY is missing"); return; }
     setOptions({ key: apiKey });
-    importLibrary("places");
+    importLibrary("places")
+      .then(() => console.log("[Places] library preloaded ok"))
+      .catch((e) => console.error("[Places] preload failed", e));
   }, []);
 
   const addressInputRef = useRef<HTMLInputElement>(null);
@@ -118,19 +118,22 @@ function OrderFormInner({ products }: OrderFormClientProps) {
       return;
     }
     if (autocompleteRef.current) return;
+    console.log("[Places] callback ref fired, attaching autocomplete");
     importLibrary("places").then((lib) => {
       if (!node.isConnected || autocompleteRef.current) return;
+      console.log("[Places] creating Autocomplete instance");
       const { Autocomplete } = lib as google.maps.PlacesLibrary;
       autocompleteRef.current = new Autocomplete(node, {
         types: ["address"],
         componentRestrictions: { country: "us" },
         fields: ["address_components"],
       });
+      console.log("[Places] Autocomplete attached successfully");
       autocompleteRef.current.addListener("place_changed", () => {
         const place = autocompleteRef.current!.getPlace();
         if (place.address_components) handlePlaceSelectedRef.current(place.address_components);
       });
-    });
+    }).catch((e) => console.error("[Places] autocomplete init failed", e));
   }, []);
 
   const hasAutoFilled = useRef(false);
