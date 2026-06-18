@@ -7,7 +7,7 @@ on:
 
 concurrency:
   group: azure-deploy
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build-and-deploy:
@@ -51,7 +51,10 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Deploy to Azure App Service
-        uses: azure/webapps-deploy@v3
-        with:
-          app-name: evry-bites
-          package: .next/standalone
+        run: |
+          cd .next/standalone && zip -r /tmp/deploy.zip . && cd -
+          az webapp deploy \
+            --resource-group evry-bites-rg \
+            --name evry-bites \
+            --src-path /tmp/deploy.zip \
+            --type zip
