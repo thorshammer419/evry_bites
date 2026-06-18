@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 import { setOptions, importLibrary } from "@googlemaps/js-api-loader";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
@@ -67,7 +67,9 @@ function OrderFormInner({ products }: OrderFormClientProps) {
 
   const addressInputRef = useRef<HTMLInputElement>(null);
 
-  const handlePlaceSelected = useCallback((components: google.maps.GeocoderAddressComponent[]) => {
+  // Ref keeps the latest handler without causing the autocomplete to re-initialize
+  const handlePlaceSelectedRef = useRef<(components: google.maps.GeocoderAddressComponent[]) => void>(() => {});
+  handlePlaceSelectedRef.current = (components) => {
     let streetNumber = "", route = "", newCity = "", newState = "", newZip = "";
     for (const c of components) {
       const t = c.types[0];
@@ -84,9 +86,9 @@ function OrderFormInner({ products }: OrderFormClientProps) {
     if (newCity && newState) {
       const isRapidCity = newCity.trim().toLowerCase() === "rapid city" && newState === "SD";
       setFulfillmentType(isRapidCity ? "local_delivery" : "shipping");
-      if (!isRapidCity && (paymentMethod === "cash")) setPaymentMethod("paypal");
+      if (!isRapidCity && paymentMethod === "cash") setPaymentMethod("paypal");
     }
-  }, [paymentMethod]);
+  };
 
   useEffect(() => {
     const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
@@ -103,11 +105,12 @@ function OrderFormInner({ products }: OrderFormClientProps) {
       });
       ac.addListener("place_changed", () => {
         const place = ac.getPlace();
-        if (place.address_components) handlePlaceSelected(place.address_components);
+        if (place.address_components) handlePlaceSelectedRef.current(place.address_components);
       });
     });
     return () => { if (ac) google.maps.event.clearInstanceListeners(ac); };
-  }, [handlePlaceSelected]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const hasAutoFilled = useRef(false);
   useEffect(() => {
