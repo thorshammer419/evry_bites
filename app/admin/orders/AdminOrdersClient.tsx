@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { FulfillmentType, OrderStatus, PaymentMethod } from "@prisma/client";
 import { trpc } from "../../../lib/trpc/react";
-import { nextStatuses } from "../../../lib/order-lifecycle";
+import { nextStatus, previousStatus, isTerminal } from "../../../lib/order-lifecycle";
 
 type OrderWithItems = {
   id: string;
@@ -33,7 +33,7 @@ type OrderWithItems = {
 const STATUS_LABELS: Record<OrderStatus, string> = {
   pending_payment: "Pending Payment",
   received: "Received",
-  confirmed: "Confirmed",
+  processing: "Processing",
   ready: "Ready",
   shipped: "Shipped",
   delivered: "Delivered",
@@ -43,7 +43,7 @@ const STATUS_LABELS: Record<OrderStatus, string> = {
 const STATUS_COLORS: Record<OrderStatus, string> = {
   pending_payment: "bg-gray-100 text-gray-600",
   received: "bg-yellow-100 text-yellow-800",
-  confirmed: "bg-blue-100 text-blue-800",
+  processing: "bg-blue-100 text-blue-800",
   ready: "bg-purple-100 text-purple-800",
   shipped: "bg-indigo-100 text-indigo-800",
   delivered: "bg-green-100 text-green-800",
@@ -57,14 +57,36 @@ const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   check: "Check on Delivery",
 };
 
-const ADVANCE_LABELS: Partial<Record<OrderStatus, string>> = {
-  confirmed: "Mark as Confirmed",
-  ready: "Mark as Ready",
-  shipped: "Mark as Shipped",
-  delivered: "Mark as Delivered",
-};
-
 const ALL_STATUSES = Object.keys(STATUS_LABELS) as OrderStatus[];
+
+function getStatusLabel(order: OrderWithItems): string {
+  if (order.status === "shipped" && order.fulfillmentType === "local_delivery") {
+    return "Out for Delivery";
+  }
+  return STATUS_LABELS[order.status];
+}
+
+function getForwardLabel(order: OrderWithItems, next: OrderStatus): string {
+  if (next === "shipped" && order.fulfillmentType === "local_delivery") {
+    return "Mark as Out for Delivery";
+  }
+  if (next === "delivered") return "Mark as Delivered";
+  if (next === "shipped") return "Mark as Shipped";
+  if (next === "ready") return "Mark as Ready";
+  if (next === "processing") return "Mark as Processing";
+  if (next === "received") return "Mark as Received";
+  return `Mark as ${STATUS_LABELS[next]}`;
+}
+
+function getBackwardLabel(order: OrderWithItems, prev: OrderStatus): string {
+  if (prev === "ready") return "Back to Ready";
+  if (prev === "shipped") {
+    return order.fulfillmentType === "local_delivery" ? "Back to Out for Delivery" : "Back to Shipped";
+  }
+  if (prev === "processing") return "Back to Processing";
+  if (prev === "received") return "Back to Received";
+  return `Back to ${STATUS_LABELS[prev]}`;
+}
 
 function matchesSearch(order: OrderWithItems, query: string): boolean {
   if (!query) return true;
@@ -126,9 +148,145 @@ function CancelModal({
   );
 }
 
+function VenmoReminderModal({
+  handle,
+  amount,
+  onClose,
+}: {
+  handle: string;
+  amount: string;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5">
+        <h2 className="text-lg font-bold text-blue-900 mb-1">Order Cancelled</h2>
+        <p className="text-sm text-blue-700 mb-3">
+          Remember to send the customer a refund on Venmo:
+        </p>
+        <div className="bg-sky-50 rounded-xl p-4 text-center mb-4">
+          <p className="text-2xl font-bold text-blue-900">{amount}</p>
+          <p className="text-sm text-blue-700 mt-1">to <span className="font-semibold">{handle}</span></p>
+        </div>
+        <button
+          onClick={onClose}
+          className="w-full bg-blue-900 text-white px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-blue-800 transition-colors"
+        >
+          Got it
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function CashDeliveryModal({
+  total,
+  onConfirm,
+  onClose,
+  isPending,
+}: {
+  total: number;
+  onConfirm: () => void;
+  onClose: () => void;
+  isPending: boolean;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5">
+        <h2 className="text-lg font-bold text-blue-900 mb-1">Mark as Delivered</h2>
+        <p className="text-sm text-blue-700 mb-1">Did you collect payment from the customer?</p>
+        <p className="text-2xl font-bold text-blue-900 mb-4">${total.toFixed(2)}</p>
+        <div className="flex gap-2">
+          <button
+            onClick={onClose}
+            disabled={isPending}
+            className="flex-1 border border-sky-200 text-blue-800 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-sky-50 transition-colors disabled:opacity-60"
+          >
+            Go Back
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={isPending}
+            className="flex-1 bg-blue-900 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-blue-800 transition-colors disabled:opacity-60"
+          >
+            {isPending ? "Updating..." : "Mark as Delivered"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChangePaymentModal({
+  currentMethod,
+  onConfirm,
+  onClose,
+  isPending,
+}: {
+  currentMethod: PaymentMethod;
+  onConfirm: (method: PaymentMethod) => void;
+  onClose: () => void;
+  isPending: boolean;
+}) {
+  const options = (["venmo", "paypal", "cash", "check"] as PaymentMethod[]).filter(
+    (m) => m !== currentMethod
+  );
+  const [selected, setSelected] = useState<PaymentMethod>(options[0]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5">
+        <h2 className="text-lg font-bold text-blue-900 mb-1">Change Payment Method</h2>
+        <p className="text-sm text-blue-700 mb-4">
+          The order will reset to <span className="font-semibold">Pending Payment</span> so the customer can pay via the new method.
+        </p>
+        <div className="space-y-2 mb-4">
+          {options.map((m) => (
+            <label
+              key={m}
+              className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${
+                selected === m ? "border-blue-900 bg-sky-50" : "border-sky-200 hover:bg-sky-50"
+              }`}
+            >
+              <input
+                type="radio"
+                name="paymentMethod"
+                value={m}
+                checked={selected === m}
+                onChange={() => setSelected(m)}
+                className="accent-blue-900"
+              />
+              <span className="text-sm font-medium text-blue-900">{PAYMENT_LABELS[m]}</span>
+            </label>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={onClose}
+            disabled={isPending}
+            className="flex-1 border border-sky-200 text-blue-800 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-sky-50 transition-colors disabled:opacity-60"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onConfirm(selected)}
+            disabled={isPending}
+            className="flex-1 bg-blue-900 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-blue-800 transition-colors disabled:opacity-60"
+          >
+            {isPending ? "Updating..." : "Confirm"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function OrderRow({ order }: { order: OrderWithItems }) {
   const [expanded, setExpanded] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
+  const [showDeliveryModal, setShowDeliveryModal] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [venmoReminder, setVenmoReminder] = useState<{ handle: string; amount: string } | null>(null);
   const utils = trpc.useUtils();
 
   const updateStatus = trpc.orders.updateStatus.useMutation({
@@ -136,16 +294,30 @@ function OrderRow({ order }: { order: OrderWithItems }) {
   });
 
   const cancelOrder = trpc.orders.cancelOrder.useMutation({
-    onSuccess: () => { utils.orders.listAll.invalidate(); setShowCancelModal(false); },
+    onSuccess: (data) => {
+      utils.orders.listAll.invalidate();
+      setShowCancelModal(false);
+      if (data.venmoReminder) setVenmoReminder(data.venmoReminder);
+    },
   });
 
-  const actions = nextStatuses(order);
+  const changePayment = trpc.orders.changePaymentMethod.useMutation({
+    onSuccess: () => { utils.orders.listAll.invalidate(); setShowPaymentModal(false); },
+  });
+
+  const next = nextStatus(order);
+  const prev = previousStatus(order);
+  const canCancel = !isTerminal(order.status) && order.status !== "cancelled";
+  const canChangePayment = !isTerminal(order.status) && order.status !== "cancelled";
   const ref = order.id.slice(0, 8).toUpperCase();
+  const isCashCheck = order.paymentMethod === "cash" || order.paymentMethod === "check";
+  const showCashFlag = isCashCheck && !isTerminal(order.status) && order.status !== "cancelled";
   const date = new Date(order.createdAt).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",
   });
+  const isMutating = updateStatus.isPending || cancelOrder.isPending || changePayment.isPending;
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-sky-100 overflow-hidden">
@@ -157,13 +329,18 @@ function OrderRow({ order }: { order: OrderWithItems }) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-semibold text-blue-900">#{ref}</span>
-            <span
-              className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[order.status]}`}
-            >
-              {STATUS_LABELS[order.status]}
+            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[order.status]}`}>
+              {getStatusLabel(order)}
             </span>
+            {showCashFlag && (
+              <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-amber-100 text-amber-800">
+                Awaiting {order.paymentMethod === "cash" ? "Cash" : "Check"}
+              </span>
+            )}
           </div>
-          <p className="text-sm text-blue-700 mt-0.5">{[order.firstName, order.lastName].filter(Boolean).join(" ") || order.customerEmail}</p>
+          <p className="text-sm text-blue-700 mt-0.5">
+            {[order.firstName, order.lastName].filter(Boolean).join(" ") || order.customerEmail}
+          </p>
           <p className="text-xs text-sky-500 mt-0.5">
             {order.fulfillmentType === "local_delivery" ? "Local Delivery" : "Shipping"} · {date}
           </p>
@@ -175,9 +352,7 @@ function OrderRow({ order }: { order: OrderWithItems }) {
         <div className="border-t border-sky-100 px-4 pb-4 space-y-4">
           {/* Contact */}
           <div className="pt-3">
-            <p className="text-xs font-semibold text-sky-500 uppercase tracking-wide mb-2">
-              Customer
-            </p>
+            <p className="text-xs font-semibold text-sky-500 uppercase tracking-wide mb-2">Customer</p>
             <p className="text-sm text-blue-900">{[order.firstName, order.lastName].filter(Boolean).join(" ") || "—"}</p>
             <p className="text-sm text-blue-700">{order.customerEmail}</p>
             <p className="text-sm text-blue-700">{order.customerPhone}</p>
@@ -190,21 +365,15 @@ function OrderRow({ order }: { order: OrderWithItems }) {
 
           {/* Order items */}
           <div>
-            <p className="text-xs font-semibold text-sky-500 uppercase tracking-wide mb-2">
-              Items
-            </p>
+            <p className="text-xs font-semibold text-sky-500 uppercase tracking-wide mb-2">Items</p>
             <div className="space-y-1">
               {order.orderItems.map((item) => (
                 <div key={item.id} className="flex justify-between text-sm">
                   <span className="text-blue-800">
                     {item.product.name}{" "}
-                    <span className="text-sky-500">
-                      × {item.quantity} {item.product.unitLabel}
-                    </span>
+                    <span className="text-sky-500">× {item.quantity} {item.product.unitLabel}</span>
                   </span>
-                  <span className="font-medium text-blue-900">
-                    ${Number(item.subtotal).toFixed(2)}
-                  </span>
+                  <span className="font-medium text-blue-900">${Number(item.subtotal).toFixed(2)}</span>
                 </div>
               ))}
             </div>
@@ -222,30 +391,53 @@ function OrderRow({ order }: { order: OrderWithItems }) {
             </p>
             {order.notes && (
               <p>
-                <span className="font-medium text-blue-900">Notes:</span>{" "}
-                {order.notes}
+                <span className="font-medium text-blue-900">Notes:</span> {order.notes}
               </p>
             )}
           </div>
 
           {/* Actions */}
           <div className="space-y-2 pt-1">
-            {actions.map((next) => (
+            {next && (
               <button
-                key={next}
-                onClick={() =>
-                  updateStatus.mutate({ id: order.id, status: next as Exclude<OrderStatus, "received" | "pending_payment" | "cancelled"> })
-                }
-                disabled={updateStatus.isPending}
+                onClick={() => {
+                  const isCashCheckDelivery =
+                    isCashCheck && order.status === "shipped" && next === "delivered";
+                  if (isCashCheckDelivery) {
+                    setShowDeliveryModal(true);
+                  } else {
+                    updateStatus.mutate({ id: order.id, status: next });
+                  }
+                }}
+                disabled={isMutating}
                 className="w-full bg-blue-900 text-white px-4 py-3 rounded-xl font-semibold text-sm hover:bg-blue-800 active:bg-blue-950 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                {updateStatus.isPending ? "Updating..." : ADVANCE_LABELS[next]}
+                {updateStatus.isPending ? "Updating..." : getForwardLabel(order, next)}
               </button>
-            ))}
-            {order.status === "received" && (
+            )}
+            {prev && (
+              <button
+                onClick={() => updateStatus.mutate({ id: order.id, status: prev })}
+                disabled={isMutating}
+                className="w-full border border-sky-200 text-blue-700 px-4 py-2.5 rounded-xl font-semibold text-sm hover:bg-sky-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {updateStatus.isPending ? "Updating..." : getBackwardLabel(order, prev)}
+              </button>
+            )}
+            {canChangePayment && (
+              <button
+                onClick={() => setShowPaymentModal(true)}
+                disabled={isMutating}
+                className="w-full border border-sky-300 text-blue-700 px-4 py-2.5 rounded-xl font-semibold text-sm hover:bg-sky-50 transition-colors disabled:opacity-60"
+              >
+                Change Payment Method
+              </button>
+            )}
+            {canCancel && (
               <button
                 onClick={() => setShowCancelModal(true)}
-                className="w-full border border-red-200 text-red-600 px-4 py-2.5 rounded-xl font-semibold text-sm hover:bg-red-50 transition-colors"
+                disabled={isMutating}
+                className="w-full border border-red-200 text-red-600 px-4 py-2.5 rounded-xl font-semibold text-sm hover:bg-red-50 transition-colors disabled:opacity-60"
               >
                 Cancel Order
               </button>
@@ -253,9 +445,10 @@ function OrderRow({ order }: { order: OrderWithItems }) {
           </div>
 
           {updateStatus.isError && (
-            <p className="text-sm text-red-600">
-              {updateStatus.error.message}
-            </p>
+            <p className="text-sm text-red-600">{updateStatus.error.message}</p>
+          )}
+          {cancelOrder.isError && (
+            <p className="text-sm text-red-600">{cancelOrder.error.message}</p>
           )}
         </div>
       )}
@@ -265,6 +458,37 @@ function OrderRow({ order }: { order: OrderWithItems }) {
           isPending={cancelOrder.isPending}
           onClose={() => setShowCancelModal(false)}
           onConfirm={(reason) => cancelOrder.mutate({ id: order.id, reason: reason || undefined })}
+        />
+      )}
+
+      {showPaymentModal && (
+        <ChangePaymentModal
+          currentMethod={order.paymentMethod}
+          isPending={changePayment.isPending}
+          onClose={() => setShowPaymentModal(false)}
+          onConfirm={(method) => changePayment.mutate({ id: order.id, newPaymentMethod: method })}
+        />
+      )}
+
+      {venmoReminder && (
+        <VenmoReminderModal
+          handle={venmoReminder.handle}
+          amount={venmoReminder.amount}
+          onClose={() => setVenmoReminder(null)}
+        />
+      )}
+
+      {showDeliveryModal && (
+        <CashDeliveryModal
+          total={Number(order.totalAmount)}
+          isPending={updateStatus.isPending}
+          onClose={() => setShowDeliveryModal(false)}
+          onConfirm={() => {
+            updateStatus.mutate(
+              { id: order.id, status: "delivered" },
+              { onSuccess: () => setShowDeliveryModal(false) }
+            );
+          }}
         />
       )}
     </div>

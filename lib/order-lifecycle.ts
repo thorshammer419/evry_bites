@@ -2,33 +2,43 @@ import type { FulfillmentType, OrderStatus } from "@prisma/client";
 
 type OrderForLifecycle = { status: OrderStatus; fulfillmentType: FulfillmentType };
 
-// Structural transition rules. FulfillmentType governs which terminal
-// status is reachable from "ready" — not captured here, enforced below.
-const TRANSITIONS: Partial<Record<OrderStatus, OrderStatus[]>> = {
-  received: ["confirmed"],
-  confirmed: ["ready"],
-  ready: ["shipped", "delivered"],
+// Forward cycle: pending_payment → received → processing → ready → shipped → delivered
+const NEXT: Partial<Record<OrderStatus, OrderStatus>> = {
+  pending_payment: "received",
+  received: "processing",
+  processing: "ready",
+  ready: "shipped",
+  shipped: "delivered",
 };
+
+// Backward cycle — received has no backward step (pending_payment is not meaningful once received)
+const PREV: Partial<Record<OrderStatus, OrderStatus>> = {
+  processing: "received",
+  ready: "processing",
+  shipped: "ready",
+  delivered: "shipped",
+};
+
+export function nextStatus(order: OrderForLifecycle): OrderStatus | null {
+  return NEXT[order.status] ?? null;
+}
+
+export function previousStatus(order: OrderForLifecycle): OrderStatus | null {
+  return PREV[order.status] ?? null;
+}
 
 export function isValidTransition(
   order: OrderForLifecycle,
   next: OrderStatus
 ): boolean {
-  const allowed = TRANSITIONS[order.status];
-  if (!allowed?.includes(next)) return false;
-  if (order.status === "ready" && next === "delivered" && order.fulfillmentType !== "local_delivery")
-    return false;
-  if (order.status === "ready" && next === "shipped" && order.fulfillmentType !== "shipping")
-    return false;
-  return true;
+  return NEXT[order.status] === next || PREV[order.status] === next;
 }
 
 export function nextStatuses(order: OrderForLifecycle): OrderStatus[] {
-  return (TRANSITIONS[order.status] ?? []).filter((next) =>
-    isValidTransition(order, next)
-  );
+  const n = NEXT[order.status];
+  return n ? [n] : [];
 }
 
 export function isTerminal(status: OrderStatus): boolean {
-  return !TRANSITIONS[status];
+  return status === "delivered" || status === "cancelled";
 }

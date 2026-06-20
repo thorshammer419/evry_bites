@@ -101,6 +101,91 @@ async function getPaypalAccessToken(): Promise<string> {
   return data.access_token;
 }
 
+async function sendPaypalInvoice(order: {
+  id: string;
+  customerEmail: string;
+  firstName: string | null;
+  lastName: string | null;
+  totalAmount: unknown;
+}): Promise<string> {
+  const mode = process.env.PAYPAL_MODE ?? "sandbox";
+  const baseUrl = mode === "live" ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com";
+  const accessToken = await getPaypalAccessToken();
+  const ref = order.id.slice(0, 8).toUpperCase();
+  const total = Number(order.totalAmount).toFixed(2);
+
+  const createRes = await fetch(`${baseUrl}/v2/invoicing/invoices`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({
+      detail: {
+        invoice_number: ref,
+        currency_code: "USD",
+        note: `EvryBites order #${ref}`,
+      },
+      primary_recipients: [{
+        billing_info: { email_address: order.customerEmail },
+      }],
+      items: [{
+        name: `Order #${ref}`,
+        quantity: "1",
+        unit_amount: { currency_code: "USD", value: total },
+      }],
+      amount: { breakdown: { item_total: { currency_code: "USD", value: total } } },
+    }),
+  });
+
+  if (!createRes.ok) {
+    const body = await createRes.text().catch(() => "(unreadable)");
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: `PayPal invoice creation failed (${createRes.status}): ${body}`,
+    });
+  }
+
+  const created = await createRes.json() as { href?: string; id?: string };
+  const invoiceId = created.id ?? (created.href?.split("/").pop() ?? "");
+
+  const sendRes = await fetch(`${baseUrl}/v2/invoicing/invoices/${invoiceId}/send`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ send_to_recipient: true }),
+  });
+
+  if (!sendRes.ok) {
+    const body = await sendRes.text().catch(() => "(unreadable)");
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: `PayPal invoice send failed (${sendRes.status}): ${body}`,
+    });
+  }
+
+  return invoiceId;
+}
+
+async function refundPaypalCapture(captureId: string): Promise<void> {
+  const mode = process.env.PAYPAL_MODE ?? "sandbox";
+  const baseUrl = mode === "live" ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com";
+  const accessToken = await getPaypalAccessToken();
+
+  const res = await fetch(`${baseUrl}/v2/payments/captures/${captureId}/refund`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({}),
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "(unreadable)");
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: `PayPal refund failed (${res.status}): ${body}`,
+    });
+  }
+}
+
 export const ordersRouter = router({
   listAll: publicProcedure.query(() =>
     db.order.findMany({
@@ -110,7 +195,7 @@ export const ordersRouter = router({
   ),
 
   updateStatus: publicProcedure
-    .input(z.object({ id: z.string(), status: z.enum(["confirmed", "ready", "shipped", "delivered"]) }))
+    .input(z.object({ id: z.string(), status: z.enum(["pending_payment", "received", "processing", "ready", "shipped", "delivered", "cancelled"]) }))
     .mutation(async ({ input, ctx }) => {
       const order = await db.order.findUniqueOrThrow({
         where: { id: input.id },
@@ -269,14 +354,19 @@ export const ordersRouter = router({
 
       const captureData = await captureRes.json() as {
         payment_source?: { venmo?: unknown; paypal?: unknown };
-        purchase_units?: { payments?: { captures?: { seller_receivable_breakdown?: { paypal_fee?: { value?: string } } }[] } }[];
+        purchase_units?: { payments?: { captures?: { id?: string; seller_receivable_breakdown?: { paypal_fee?: { value?: string } } }[] } }[];
       };
 
       const actualPaymentMethod = captureData.payment_source?.venmo ? "venmo" : "paypal";
+      const captureId = captureData.purchase_units?.[0]?.payments?.captures?.[0]?.id;
 
       const order = await db.order.update({
         where: { id: input.orderId },
-        data: { status: "received", paymentMethod: actualPaymentMethod },
+        data: {
+          status: "received",
+          paymentMethod: actualPaymentMethod,
+          ...(captureId ? { paypalCaptureId: captureId } : {}),
+        },
         include: { orderItems: { include: { product: true } } },
       });
 
@@ -292,6 +382,20 @@ export const ordersRouter = router({
   cancelOrder: publicProcedure
     .input(z.object({ id: z.string(), reason: z.string().optional() }))
     .mutation(async ({ input, ctx }) => {
+      const existing = await db.order.findUniqueOrThrow({ where: { id: input.id } });
+
+      if (existing.status === "delivered" || existing.status === "cancelled") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Cannot cancel an order that is already ${existing.status}.`,
+        });
+      }
+
+      // Issue PayPal refund if payment was captured via checkout
+      if (existing.paypalCaptureId) {
+        await refundPaypalCapture(existing.paypalCaptureId);
+      }
+
       const order = await db.order.update({
         where: { id: input.id },
         data: { status: "cancelled" },
@@ -302,7 +406,75 @@ export const ordersRouter = router({
         .notify({ type: "order.cancelled", order, reason: input.reason })
         .catch((err) => console.error("[orders] cancel notification failed:", err));
 
-      return order;
+      const venmoReminder =
+        existing.paymentMethod === "venmo"
+          ? {
+              handle: process.env.NEXT_PUBLIC_VENMO_HANDLE ?? "@thorshammer419",
+              amount: `$${Number(existing.totalAmount).toFixed(2)}`,
+            }
+          : null;
+
+      return { order, venmoReminder };
+    }),
+
+  changePaymentMethod: publicProcedure
+    .input(z.object({
+      id: z.string(),
+      newPaymentMethod: z.enum(["venmo", "paypal", "cash", "check"]),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const existing = await db.order.findUniqueOrThrow({
+        where: { id: input.id },
+        include: INCLUDE_FULL,
+      });
+
+      if (existing.status === "delivered" || existing.status === "cancelled") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Cannot change payment method on a delivered or cancelled order.",
+        });
+      }
+
+      if (existing.paymentMethod === input.newPaymentMethod) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "The order already uses that payment method.",
+        });
+      }
+
+      // If switching away from a paid PayPal checkout order, refund first
+      if (existing.paymentMethod === "paypal" && existing.paypalCaptureId) {
+        await refundPaypalCapture(existing.paypalCaptureId);
+      }
+
+      // If switching to PayPal, create and send an invoice
+      let paypalInvoiceId: string | undefined;
+      if (input.newPaymentMethod === "paypal") {
+        paypalInvoiceId = await sendPaypalInvoice(existing);
+      }
+
+      const updated = await db.order.update({
+        where: { id: input.id },
+        data: {
+          paymentMethod: input.newPaymentMethod,
+          status: "pending_payment",
+          // Clear PayPal checkout IDs when moving away from PayPal
+          ...(input.newPaymentMethod !== "paypal"
+            ? { paypalCaptureId: null, paypalInvoiceId: null, paypalOrderId: null }
+            : {}),
+          ...(paypalInvoiceId ? { paypalInvoiceId } : {}),
+        },
+        include: INCLUDE_FULL,
+      });
+
+      // If switching to Venmo, email the customer a payment link
+      if (input.newPaymentMethod === "venmo") {
+        ctx.notifier
+          .notify({ type: "order.venmo_payment_requested", order: updated })
+          .catch((err) => console.error("[orders] venmo-payment-email failed:", err));
+      }
+
+      return updated;
     }),
 
   requestCashCheckApproval: publicProcedure

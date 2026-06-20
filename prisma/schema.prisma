@@ -21,7 +21,7 @@ enum PaymentMethod {
 enum OrderStatus {
   pending_payment
   received
-  confirmed
+  processing
   ready
   shipped
   delivered
@@ -60,6 +60,8 @@ model Order {
   status          OrderStatus     @default(received)
   totalAmount     Decimal         @db.Decimal(10, 2)
   paypalOrderId   String?
+  paypalCaptureId String?
+  paypalInvoiceId String?
   createdAt       DateTime        @default(now())
   orderItems      OrderItem[]
 }

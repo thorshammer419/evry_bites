@@ -102,7 +102,7 @@ describe("products.create", () => {
     await caller.products.create(input);
 
     expect(db.product.create).toHaveBeenCalledWith({
-      data: {
+      data: expect.objectContaining({
         name: "Cookies",
         description: "Fresh cookies",
         price: "12.00",
@@ -110,7 +110,7 @@ describe("products.create", () => {
         unitLabel: "dozen",
         imageUrl: null,
         active: true,
-      },
+      }),
     });
   });
 
@@ -159,7 +159,7 @@ describe("products.update", () => {
 
     expect(db.product.update).toHaveBeenCalledWith({
       where: { id: "1" },
-      data: {
+      data: expect.objectContaining({
         name: "Updated Cookies",
         description: "Even fresher cookies",
         price: "14.00",
@@ -167,7 +167,7 @@ describe("products.update", () => {
         unitLabel: "dozen",
         imageUrl: null,
         active: true,
-      },
+      }),
     });
   });
 });

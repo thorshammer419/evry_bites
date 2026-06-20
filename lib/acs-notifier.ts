@@ -29,11 +29,11 @@ function getStatusMessage(
   const name = customerName(order);
 
   switch (newStatus) {
-    case "confirmed":
+    case "processing":
       return {
-        subject: `EvryBites Order #${ref} — Confirmed!`,
-        body: `Hi ${name},\n\nYour EvryBites order (#${ref}) is confirmed and being prepared! We'll reach out again when it's ready.\n\nTotal: ${total}\n\nThanks for ordering!`,
-        sms: `EvryBites: Your order #${ref} is confirmed and being prepared! Total: ${total}`,
+        subject: `EvryBites Order #${ref} — Being Prepared!`,
+        body: `Hi ${name},\n\nGreat news! Your EvryBites order (#${ref}) is now being prepared. We'll reach out again when it's ready.\n\nTotal: ${total}\n\nThanks for ordering!`,
+        sms: `EvryBites: Your order #${ref} is being prepared! Total: ${total}`,
       };
     case "ready":
       return order.fulfillmentType === "local_delivery"
@@ -89,6 +89,8 @@ export class AcsNotifier implements Notifier {
         connectionString,
         event.reason
       );
+    } else if (event.type === "order.venmo_payment_requested") {
+      await this.sendVenmoPaymentRequest(event.order, connectionString);
     } else if (event.type === "user.cash_check_requested") {
       await this.sendCashCheckRequest(event.request, connectionString);
     } else {
@@ -195,6 +197,51 @@ export class AcsNotifier implements Notifier {
     if (result && "pollUntilDone" in result) {
       result.pollUntilDone().catch((err: unknown) =>
         console.error("[notifications] cash-check-request poll failed:", err)
+      );
+    }
+  }
+
+  private async sendVenmoPaymentRequest(
+    order: import("./notifier").OrderForNotification & { totalAmount: unknown },
+    connectionString: string
+  ): Promise<void> {
+    const fromEmail = process.env.ACS_FROM_EMAIL;
+    if (!fromEmail) return;
+
+    const ref = order.id.slice(0, 8).toUpperCase();
+    const total = Number(order.totalAmount).toFixed(2);
+    const name = customerName(order);
+    const venmoHandle = process.env.NEXT_PUBLIC_VENMO_HANDLE ?? "@thorshammer419";
+    const note = encodeURIComponent(`Order #${ref}`);
+    const venmoLink = `https://venmo.com/${venmoHandle.replace("@", "")}?txn=pay&amount=${total}&note=${note}`;
+
+    const subject = `EvryBites Order #${ref} — Payment Request`;
+    const body = [
+      `Hi ${name},`,
+      "",
+      `Your EvryBites order (#${ref}) is ready for payment via Venmo.`,
+      "",
+      `Amount due: $${total}`,
+      "",
+      `Pay now: ${venmoLink}`,
+      "",
+      "Tap the link above to open Venmo pre-filled with the payment details.",
+      "",
+      "Thank you for your order!",
+    ].join("\n");
+
+    const { EmailClient } = await import("@azure/communication-email");
+    const result = await new EmailClient(connectionString).beginSend({
+      senderAddress: fromEmail,
+      recipients: { to: [{ address: order.customerEmail }] },
+      content: { subject, plainText: body },
+    }).catch((err: unknown) => {
+      console.error("[notifications] venmo-payment-request email failed:", err);
+    });
+
+    if (result && "pollUntilDone" in result) {
+      result.pollUntilDone().catch((err: unknown) =>
+        console.error("[notifications] venmo-payment-request poll failed:", err)
       );
     }
   }

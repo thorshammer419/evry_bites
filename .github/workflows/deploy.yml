@@ -73,5 +73,8 @@ jobs:
           az webapp config appsettings set \
             --name evry-bites \
             --resource-group evry-bites-rg \
-            --settings WEBSITES_PORT=3000
+            --settings \
+              WEBSITES_PORT=3000 \
+              PAYPAL_CLIENT_ID="${{ secrets.PAYPAL_CLIENT_ID }}" \
+              PAYPAL_CLIENT_SECRET="${{ secrets.PAYPAL_CLIENT_SECRET }}"
           az webapp restart --name evry-bites --resource-group evry-bites-rg

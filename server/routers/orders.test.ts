@@ -8,6 +8,7 @@ vi.mock("../../lib/db", () => ({
   db: {
     product: {
       findMany: vi.fn(),
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     },
     order: {
       findMany: vi.fn(),
@@ -210,35 +211,60 @@ describe("orders.updateStatus", () => {
     vi.clearAllMocks();
   });
 
-  it("valid transition: received → confirmed updates status and triggers notification", async () => {
+  it("valid transition: received → processing updates status and triggers notification", async () => {
     vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(mockOrder);
-    vi.mocked(db.order.update).mockResolvedValue({ ...mockOrder, status: "confirmed" });
+    vi.mocked(db.order.update).mockResolvedValue({ ...mockOrder, status: "processing" });
 
-    const result = await caller.orders.updateStatus({ id: "order-123", status: "confirmed" });
+    const result = await caller.orders.updateStatus({ id: "order-123", status: "processing" });
 
     expect(db.order.update).toHaveBeenCalledWith({
       where: { id: "order-123" },
-      data: { status: "confirmed" },
+      data: { status: "processing" },
       include: { orderItems: { include: { product: true } } },
     });
     expect(mockNotify).toHaveBeenCalledWith({
       type: "order.status_changed",
       order: expect.objectContaining({ id: "order-123" }),
-      newStatus: "confirmed",
+      newStatus: "processing",
     });
-    expect(result.status).toBe("confirmed");
+    expect(result.status).toBe("processing");
   });
 
-  it("valid transition: ready → delivered for local_delivery", async () => {
-    const readyOrder = { ...mockOrder, status: "ready", fulfillmentType: "local_delivery" };
+  it("valid transition: ready → shipped", async () => {
+    const readyOrder = { ...mockOrder, status: "ready" };
     vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(readyOrder);
-    vi.mocked(db.order.update).mockResolvedValue({ ...readyOrder, status: "delivered" });
+    vi.mocked(db.order.update).mockResolvedValue({ ...readyOrder, status: "shipped" });
+
+    await caller.orders.updateStatus({ id: "order-123", status: "shipped" });
+
+    expect(db.order.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: "shipped" } })
+    );
+  });
+
+  it("valid transition: shipped → delivered", async () => {
+    const shippedOrder = { ...mockOrder, status: "shipped" };
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(shippedOrder);
+    vi.mocked(db.order.update).mockResolvedValue({ ...shippedOrder, status: "delivered" });
 
     await caller.orders.updateStatus({ id: "order-123", status: "delivered" });
 
     expect(db.order.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: { status: "delivered" } })
     );
+  });
+
+  it("valid backward transition: shipped → ready", async () => {
+    const shippedOrder = { ...mockOrder, status: "shipped" };
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(shippedOrder);
+    vi.mocked(db.order.update).mockResolvedValue({ ...shippedOrder, status: "ready" });
+
+    const result = await caller.orders.updateStatus({ id: "order-123", status: "ready" });
+
+    expect(db.order.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: "ready" } })
+    );
+    expect(result.status).toBe("ready");
   });
 
   it("rejects skipping a state (received → ready)", async () => {
@@ -252,9 +278,9 @@ describe("orders.updateStatus", () => {
     expect(mockNotify).not.toHaveBeenCalled();
   });
 
-  it("rejects delivered for shipping fulfillment type", async () => {
-    const readyShipping = { ...mockOrder, status: "ready", fulfillmentType: "shipping" };
-    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(readyShipping);
+  it("rejects ready → delivered (must go through shipped)", async () => {
+    const readyOrder = { ...mockOrder, status: "ready" };
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(readyOrder);
 
     await expect(
       caller.orders.updateStatus({ id: "order-123", status: "delivered" })
