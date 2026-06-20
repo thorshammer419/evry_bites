@@ -29,6 +29,12 @@ function getStatusMessage(
   const name = customerName(order);
 
   switch (newStatus) {
+    case "received":
+      return {
+        subject: `EvryBites Order #${ref} — Received!`,
+        body: `Hi ${name},\n\nYour EvryBites order (#${ref}) has been received and is being confirmed. We'll be in touch shortly!\n\nTotal: ${total}\n\nThanks for ordering!`,
+        sms: `EvryBites: Your order #${ref} has been received! Total: ${total}. We'll confirm shortly.`,
+      };
     case "processing":
       return {
         subject: `EvryBites Order #${ref} — Being Prepared!`,
