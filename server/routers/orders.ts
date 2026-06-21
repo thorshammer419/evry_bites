@@ -2,7 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, publicProcedure } from "../trpc";
 import { db } from "../../lib/db";
-import { isValidTransition } from "../../lib/order-lifecycle";
+import { isValidTransition, REFUND_STATUSES } from "../../lib/order-lifecycle";
 
 const INCLUDE_FULL = {
   orderItems: { include: { product: true } },
@@ -195,7 +195,11 @@ export const ordersRouter = router({
   ),
 
   updateStatus: publicProcedure
-    .input(z.object({ id: z.string(), status: z.enum(["pending_payment", "received", "processing", "ready", "shipped", "delivered", "cancelled"]) }))
+    .input(z.object({
+      id: z.string(),
+      status: z.enum(["pending_payment", "received", "processing", "ready", "shipped", "delivered", "cancelled", "refunded"]),
+      cashCollected: z.string().optional(),
+    }))
     .mutation(async ({ input, ctx }) => {
       const order = await db.order.findUniqueOrThrow({
         where: { id: input.id },
@@ -211,7 +215,10 @@ export const ordersRouter = router({
 
       const updated = await db.order.update({
         where: { id: input.id },
-        data: { status: input.status },
+        data: {
+          status: input.status,
+          ...(input.cashCollected !== undefined ? { cashCollected: input.cashCollected } : {}),
+        },
         include: INCLUDE_FULL,
       });
 
@@ -384,12 +391,15 @@ export const ordersRouter = router({
     .mutation(async ({ input, ctx }) => {
       const existing = await db.order.findUniqueOrThrow({ where: { id: input.id } });
 
-      if (existing.status === "delivered" || existing.status === "cancelled") {
+      if (existing.status === "cancelled" || existing.status === "refunded") {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: `Cannot cancel an order that is already ${existing.status}.`,
         });
       }
+
+      const isRefund = REFUND_STATUSES.includes(existing.status);
+      const newStatus = isRefund ? "refunded" : "cancelled";
 
       // Issue PayPal refund if payment was captured via checkout
       if (existing.paypalCaptureId) {
@@ -398,7 +408,7 @@ export const ordersRouter = router({
 
       const order = await db.order.update({
         where: { id: input.id },
-        data: { status: "cancelled" },
+        data: { status: newStatus },
         include: { orderItems: { include: { product: true } } },
       });
 
@@ -414,7 +424,7 @@ export const ordersRouter = router({
             }
           : null;
 
-      return { order, venmoReminder };
+      return { order, venmoReminder, isRefund };
     }),
 
   changePaymentMethod: publicProcedure
@@ -475,6 +485,29 @@ export const ordersRouter = router({
       }
 
       return updated;
+    }),
+
+  adminSetStatus: publicProcedure
+    .input(z.object({
+      id: z.string(),
+      status: z.enum(["pending_payment", "received", "processing", "ready", "shipped", "delivered", "cancelled", "refunded"]),
+    }))
+    .mutation(async ({ input }) => {
+      return db.order.update({
+        where: { id: input.id },
+        data: { status: input.status },
+        include: INCLUDE_FULL,
+      });
+    }),
+
+  logCashCollected: publicProcedure
+    .input(z.object({ id: z.string(), amount: z.string() }))
+    .mutation(async ({ input }) => {
+      return db.order.update({
+        where: { id: input.id },
+        data: { cashCollected: input.amount },
+        include: INCLUDE_FULL,
+      });
     }),
 
   requestCashCheckApproval: publicProcedure

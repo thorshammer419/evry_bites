@@ -40,5 +40,8 @@ export function nextStatuses(order: OrderForLifecycle): OrderStatus[] {
 }
 
 export function isTerminal(status: OrderStatus): boolean {
-  return status === "delivered" || status === "cancelled";
+  return status === "delivered" || status === "cancelled" || status === "refunded";
 }
+
+// Statuses where cancellation becomes a refund action
+export const REFUND_STATUSES: OrderStatus[] = ["ready", "shipped", "delivered"];

@@ -26,6 +26,7 @@ enum OrderStatus {
   shipped
   delivered
   cancelled
+  refunded
 }
 
 model Product {
@@ -62,6 +63,7 @@ model Order {
   paypalOrderId   String?
   paypalCaptureId String?
   paypalInvoiceId String?
+  cashCollected   Decimal?        @db.Decimal(10, 2)
   createdAt       DateTime        @default(now())
   orderItems      OrderItem[]
 }

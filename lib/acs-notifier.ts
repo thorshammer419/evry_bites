@@ -73,6 +73,14 @@ function getStatusMessage(
         sms: `EvryBites: Your order #${ref} has been cancelled.${reason ? ` Reason: ${reason}` : ""}`,
       };
     }
+    case "refunded": {
+      const reasonLine = reason ? `\n\nReason: ${reason}` : "";
+      return {
+        subject: `EvryBites Order #${ref} — Refunded`,
+        body: `Hi ${name},\n\nYour EvryBites order (#${ref}) has been refunded.${reasonLine}\n\nYour refund should appear within 3–5 business days depending on your payment method. If you have any questions, please reach out.\n\nRefund amount: ${total}`,
+        sms: `EvryBites: Your order #${ref} has been refunded. Amount: ${total}.`,
+      };
+    }
     default:
       throw new Error(`No notification template for status: ${newStatus}`);
   }
