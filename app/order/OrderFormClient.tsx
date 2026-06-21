@@ -6,7 +6,13 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import type { Product } from "@prisma/client";
-import { PayPalScriptProvider, PayPalButtons } from "@paypal/react-paypal-js";
+import {
+  PayPalScriptProvider,
+  PayPalButtons,
+  PayPalCardFieldsProvider,
+  PayPalCardFieldsForm,
+  usePayPalCardFields,
+} from "@paypal/react-paypal-js";
 import { useUser, SignInButton, SignUpButton, UserButton } from "@clerk/nextjs";
 import { CustomerHeader } from "../components/CustomerHeader";
 import { CartProvider, useCart } from "../../lib/cart";
@@ -32,6 +38,43 @@ function formatPhone(raw: string): string {
   if (digits.length < 4) return digits;
   if (digits.length < 7) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
   return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+}
+
+function CardFieldsSubmitButton({
+  onValidate,
+  amount,
+  isPending,
+}: {
+  onValidate: () => boolean;
+  amount: number;
+  isPending: boolean;
+}) {
+  const { cardFieldsForm } = usePayPalCardFields();
+  const [submitting, setSubmitting] = useState(false);
+
+  const handlePay = async () => {
+    if (!onValidate()) return;
+    setSubmitting(true);
+    try {
+      await cardFieldsForm?.submit({});
+    } catch {
+      // errors surface via onError on PayPalCardFieldsProvider
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const busy = isPending || submitting;
+  return (
+    <button
+      type="button"
+      onClick={handlePay}
+      disabled={busy}
+      className="w-full mt-3 bg-purple-800 text-white px-4 py-3 rounded-xl font-semibold hover:bg-purple-700 active:bg-purple-900 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+    >
+      {busy ? "Processing..." : `Pay $${amount.toFixed(2)}`}
+    </button>
+  );
 }
 
 function OrderFormInner({ products }: OrderFormClientProps) {
@@ -410,7 +453,7 @@ function OrderFormInner({ products }: OrderFormClientProps) {
             <div className="space-y-3">
               {([
                 { value: "venmo", label: "Venmo" },
-                { value: "paypal", label: "PayPal / Debit / Credit Card" },
+                { value: "paypal", label: "Credit / Debit Card" },
                 ...(fulfillmentType === "local_delivery" ? [{ value: "cash" as PaymentMethod, label: "Cash or Check on Delivery" }] : []),
               ] as { value: PaymentMethod; label: string }[]).map((option) => (
                 <label key={option.value} className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-colors ${
@@ -543,8 +586,8 @@ function OrderFormInner({ products }: OrderFormClientProps) {
             </div>
           )}
 
-          {/* Submit / PayPal buttons */}
-          {isPayPalMethod ? (
+          {/* Submit / PayPal / Card buttons */}
+          {paymentMethod === "venmo" && (
             <div className="relative">
               {!isPaypalFormReady && (
                 <div
@@ -552,9 +595,38 @@ function OrderFormInner({ products }: OrderFormClientProps) {
                   onClick={() => { setFormError(null); validate(); }}
                 />
               )}
-            <PayPalButtons
-              style={{ layout: "vertical", label: "pay" }}
-              fundingSource={paymentMethod === "venmo" ? "venmo" : undefined}
+              <PayPalButtons
+                style={{ layout: "vertical", label: "pay" }}
+                fundingSource="venmo"
+                createOrder={async () => {
+                  setFormError(null);
+                  if (!validate()) throw new Error("validation");
+                  try {
+                    const result = await createPaypalOrderMutation.mutateAsync(collectFormData());
+                    pendingOrderRef.current = result;
+                    return result.paypalOrderId;
+                  } catch (err) {
+                    const msg = err instanceof Error ? err.message : "Unknown error";
+                    setFormError(`Venmo error: ${msg}`);
+                    throw err;
+                  }
+                }}
+                onApprove={async () => {
+                  if (!pendingOrderRef.current) return;
+                  await capturePaypalOrderMutation.mutateAsync(pendingOrderRef.current);
+                }}
+                onError={(err) => {
+                  if (err instanceof Error && err.message === "validation") return;
+                  if (!createPaypalOrderMutation.isError) {
+                    setFormError("Something went wrong with Venmo. Please try again.");
+                  }
+                }}
+              />
+            </div>
+          )}
+
+          {paymentMethod === "paypal" && (
+            <PayPalCardFieldsProvider
               createOrder={async () => {
                 setFormError(null);
                 if (!validate()) throw new Error("validation");
@@ -564,7 +636,7 @@ function OrderFormInner({ products }: OrderFormClientProps) {
                   return result.paypalOrderId;
                 } catch (err) {
                   const msg = err instanceof Error ? err.message : "Unknown error";
-                  setFormError(`PayPal error: ${msg}`);
+                  setFormError(`Order error: ${msg}`);
                   throw err;
                 }
               }}
@@ -572,15 +644,22 @@ function OrderFormInner({ products }: OrderFormClientProps) {
                 if (!pendingOrderRef.current) return;
                 await capturePaypalOrderMutation.mutateAsync(pendingOrderRef.current);
               }}
-              onError={(err) => {
-                if (err instanceof Error && err.message === "validation") return;
+              onError={() => {
                 if (!createPaypalOrderMutation.isError) {
-                  setFormError("Something went wrong with PayPal. Please try again.");
+                  setFormError("Card payment failed. Please check your details and try again.");
                 }
               }}
-            />
-            </div>
-          ) : (
+            >
+              <PayPalCardFieldsForm />
+              <CardFieldsSubmitButton
+                onValidate={() => { setFormError(null); return validate(); }}
+                amount={grandTotal}
+                isPending={createPaypalOrderMutation.isPending || capturePaypalOrderMutation.isPending}
+              />
+            </PayPalCardFieldsProvider>
+          )}
+
+          {!isPayPalMethod && (
             <button
               type="submit"
               disabled={submitMutation.isPending || (isCashCheck && (!isSignedIn || !cashCheckApproved))}
@@ -601,8 +680,8 @@ export function OrderFormClient({ products }: OrderFormClientProps) {
       <PayPalScriptProvider options={{
         clientId: process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ?? "",
         currency: "USD",
-        components: "buttons",
-        enableFunding: "venmo,card",
+        components: "buttons,card-fields",
+        enableFunding: "venmo",
       }}>
         <OrderFormInner products={products} />
       </PayPalScriptProvider>
