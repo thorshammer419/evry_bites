@@ -56,8 +56,8 @@ const STATUS_COLORS: Record<OrderStatus, string> = {
 const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   venmo: "Venmo",
   paypal: "PayPal",
-  cash: "Cash on Delivery",
-  check: "Check on Delivery",
+  cash: "Cash or Check on Delivery",
+  check: "Cash or Check on Delivery",
 };
 
 const ALL_STATUSES = Object.keys(STATUS_LABELS) as OrderStatus[];
@@ -168,15 +168,14 @@ function VenmoReminderModal({ handle, amount, isRefund, onClose }: {
   );
 }
 
-function CheckDeliveryModal({ total, onConfirm, onClose, isPending }: {
-  total: number; onConfirm: () => void; onClose: () => void; isPending: boolean;
+function ConfirmDeliveryModal({ onConfirm, onClose, isPending }: {
+  onConfirm: () => void; onClose: () => void; isPending: boolean;
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5">
         <h2 className="text-lg font-bold text-blue-900 mb-1">Mark as Delivered</h2>
-        <p className="text-sm text-blue-700 mb-1">Did you collect the check from the customer?</p>
-        <p className="text-2xl font-bold text-blue-900 mb-4">${total.toFixed(2)}</p>
+        <p className="text-sm text-blue-700 mb-4">Confirm this order has been delivered to the customer?</p>
         <div className="flex gap-2">
           <button onClick={onClose} disabled={isPending}
             className="flex-1 border border-sky-200 text-blue-800 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-sky-50 transition-colors disabled:opacity-60">
@@ -354,7 +353,8 @@ function ChangePaymentModal({ currentMethod, onConfirm, onClose, isPending }: {
   onClose: () => void;
   isPending: boolean;
 }) {
-  const options = (["venmo", "paypal", "cash", "check"] as PaymentMethod[]).filter((m) => m !== currentMethod);
+  const normalizedCurrent = currentMethod === "check" ? "cash" : currentMethod;
+  const options = (["venmo", "paypal", "cash"] as PaymentMethod[]).filter((m) => m !== normalizedCurrent);
   const [selected, setSelected] = useState<PaymentMethod>(options[0]);
 
   return (
@@ -431,10 +431,9 @@ function OrderRow({ order }: { order: OrderWithItems }) {
   const collected = order.cashCollected !== null && order.cashCollected !== undefined
     ? Number(order.cashCollected)
     : null;
-  const isCash = order.paymentMethod === "cash";
-  const isCashCheck = isCash || order.paymentMethod === "check";
-  const isFullyCollected = isCash && collected !== null && collected >= total;
-  const showCashFlag = isCashCheck && !isTerminal(order.status) && order.status !== "cancelled" && order.status !== "refunded" && !isFullyCollected;
+  const isCashOrCheck = order.paymentMethod === "cash" || order.paymentMethod === "check";
+  const isFullyCollected = isCashOrCheck && collected !== null && collected >= total;
+  const showCashFlag = isCashOrCheck && !isTerminal(order.status) && order.status !== "cancelled" && order.status !== "refunded" && !isFullyCollected;
   const isRefundAction = REFUND_STATUSES.includes(order.status);
   const canCancelRefund = order.status !== "cancelled" && order.status !== "refunded";
   const canChangePayment = !["delivered", "cancelled", "refunded"].includes(order.status);
@@ -462,9 +461,7 @@ function OrderRow({ order }: { order: OrderWithItems }) {
             </span>
             {showCashFlag && (
               <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-amber-100 text-amber-800">
-                {isCash
-                  ? collected !== null ? `Cash: $${collected.toFixed(2)} / $${total.toFixed(2)}` : "Awaiting Cash"
-                  : "Awaiting Check"}
+                {collected !== null ? `Cash: $${collected.toFixed(2)} / $${total.toFixed(2)}` : "Awaiting Cash"}
               </span>
             )}
           </div>
@@ -511,7 +508,7 @@ function OrderRow({ order }: { order: OrderWithItems }) {
               <span>Total</span>
               <span>${total.toFixed(2)}</span>
             </div>
-            {isCash && collected !== null && (
+            {isCashOrCheck && collected !== null && (
               <div className="flex justify-between text-sm text-sky-600 mt-1">
                 <span>Cash collected</span>
                 <span>${collected.toFixed(2)}</span>
@@ -556,7 +553,7 @@ function OrderRow({ order }: { order: OrderWithItems }) {
                 {updateStatus.isPending ? "Updating..." : getBackwardLabel(order, prev)}
               </button>
             )}
-            {isCash && !isTerminal(order.status) && order.status !== "cancelled" && order.status !== "refunded" && (
+            {isCashOrCheck && !isTerminal(order.status) && order.status !== "cancelled" && order.status !== "refunded" && (
               <button
                 onClick={() => setShowLogCashModal(true)}
                 disabled={isMutating}
@@ -651,7 +648,7 @@ function OrderRow({ order }: { order: OrderWithItems }) {
       )}
 
       {showDeliveryModal && (
-        isCash ? (
+        isCashOrCheck ? (
           <CashDeliveryModal
             total={total}
             priorCollected={collected}
@@ -660,8 +657,7 @@ function OrderRow({ order }: { order: OrderWithItems }) {
             onConfirm={(amount) => updateStatus.mutate({ id: order.id, status: "delivered", cashCollected: amount })}
           />
         ) : (
-          <CheckDeliveryModal
-            total={total}
+          <ConfirmDeliveryModal
             isPending={updateStatus.isPending}
             onClose={() => setShowDeliveryModal(false)}
             onConfirm={() => updateStatus.mutate({ id: order.id, status: "delivered" })}
@@ -674,7 +670,7 @@ function OrderRow({ order }: { order: OrderWithItems }) {
 
 // ── Page ────────────────────────────────────────────────────────────────────
 
-const ALL_PAYMENT_METHODS = ["venmo", "paypal", "cash", "check"] as PaymentMethod[];
+const ALL_PAYMENT_METHODS = ["venmo", "paypal", "cash"] as PaymentMethod[];
 
 function toggleSet<T>(set: Set<T>, value: T): Set<T> {
   const next = new Set(set);
@@ -692,7 +688,8 @@ export function AdminOrdersClient() {
 
   const filtered = (orders ?? []).filter((o) => {
     if (statusFilter.size > 0 && !statusFilter.has(o.status)) return false;
-    if (paymentFilter.size > 0 && !paymentFilter.has(o.paymentMethod)) return false;
+    const normalizedPayment = o.paymentMethod === "check" ? "cash" : o.paymentMethod;
+    if (paymentFilter.size > 0 && !paymentFilter.has(normalizedPayment)) return false;
     if (!matchesSearch(o, search)) return false;
     const orderDate = new Date(o.createdAt);
     if (dateFrom) {

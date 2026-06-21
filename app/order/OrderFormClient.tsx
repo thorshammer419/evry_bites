@@ -100,6 +100,7 @@ function OrderFormInner({ products }: OrderFormClientProps) {
   const [state, setState] = useState("SD");
   const [zip, setZip] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("venmo");
+  const [paypalMode, setPaypalMode] = useState<"button" | "card">("button");
   const [notes, setNotes] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -452,21 +453,31 @@ function OrderFormInner({ products }: OrderFormClientProps) {
             <h2 className={sectionHeaderClass}>Payment Method</h2>
             <div className="space-y-3">
               {([
-                { value: "venmo", label: "Venmo" },
-                { value: "paypal", label: "Credit / Debit Card" },
-                ...(fulfillmentType === "local_delivery" ? [{ value: "cash" as PaymentMethod, label: "Cash or Check on Delivery" }] : []),
-              ] as { value: PaymentMethod; label: string }[]).map((option) => (
-                <label key={option.value} className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-colors ${
-                  paymentMethod === option.value ? "border-purple-800 bg-sky-50" : "border-sky-100 bg-white hover:border-sky-200"}`}>
-                  <input type="radio" name="paymentMethod" value={option.value}
-                    checked={paymentMethod === option.value}
-                    onChange={() => setPaymentMethod(option.value)} className="accent-purple-800" />
-                  <span className="font-semibold text-blue-900">{option.label}</span>
-                  {option.value === "cash" && (
-                    <span className="ml-auto text-xs text-sky-500">Account required</span>
-                  )}
-                </label>
-              ))}
+                { value: "venmo" as PaymentMethod, mode: null, label: "Venmo" },
+                { value: "paypal" as PaymentMethod, mode: "button" as const, label: "PayPal" },
+                { value: "paypal" as PaymentMethod, mode: "card" as const, label: "Credit / Debit Card" },
+                ...(fulfillmentType === "local_delivery" ? [{ value: "cash" as PaymentMethod, mode: null, label: "Cash or Check on Delivery" }] : []),
+              ]).map((option, i) => {
+                const isSelected =
+                  paymentMethod === option.value &&
+                  (option.value !== "paypal" || option.mode === paypalMode);
+                return (
+                  <label key={`${option.value}-${i}`} className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-colors ${
+                    isSelected ? "border-purple-800 bg-sky-50" : "border-sky-100 bg-white hover:border-sky-200"}`}>
+                    <input type="radio" name="paymentMethod"
+                      checked={isSelected}
+                      onChange={() => {
+                        setPaymentMethod(option.value);
+                        if (option.mode) setPaypalMode(option.mode);
+                      }}
+                      className="accent-purple-800" />
+                    <span className="font-semibold text-blue-900">{option.label}</span>
+                    {option.value === "cash" && (
+                      <span className="ml-auto text-xs text-sky-500">Account required</span>
+                    )}
+                  </label>
+                );
+              })}
             </div>
 
             {isCashCheck && clerkLoaded && !isSignedIn && (
@@ -573,8 +584,9 @@ function OrderFormInner({ products }: OrderFormClientProps) {
               </p>
               <p>
                 <span className="font-medium">Payment:</span>{" "}
-                {paymentMethod === "venmo" ? "Venmo" : paymentMethod === "paypal" ? "PayPal"
-                  : paymentMethod === "cash" ? "Cash on Delivery" : "Check on Delivery"}
+                {paymentMethod === "venmo" ? "Venmo"
+                  : paymentMethod === "paypal" ? (paypalMode === "card" ? "Credit / Debit Card" : "PayPal")
+                  : "Cash or Check on Delivery"}
               </p>
             </div>
           </section>
@@ -625,7 +637,45 @@ function OrderFormInner({ products }: OrderFormClientProps) {
             </div>
           )}
 
-          {paymentMethod === "paypal" && (
+          {paymentMethod === "paypal" && paypalMode === "button" && (
+            <div className="relative">
+              {!isPaypalFormReady && (
+                <div
+                  className="absolute inset-0 z-10 cursor-pointer"
+                  onClick={() => { setFormError(null); validate(); }}
+                />
+              )}
+              <PayPalButtons
+                style={{ layout: "vertical", label: "pay" }}
+                fundingSource="paypal"
+                createOrder={async () => {
+                  setFormError(null);
+                  if (!validate()) throw new Error("validation");
+                  try {
+                    const result = await createPaypalOrderMutation.mutateAsync(collectFormData());
+                    pendingOrderRef.current = result;
+                    return result.paypalOrderId;
+                  } catch (err) {
+                    const msg = err instanceof Error ? err.message : "Unknown error";
+                    setFormError(`PayPal error: ${msg}`);
+                    throw err;
+                  }
+                }}
+                onApprove={async () => {
+                  if (!pendingOrderRef.current) return;
+                  await capturePaypalOrderMutation.mutateAsync(pendingOrderRef.current);
+                }}
+                onError={(err) => {
+                  if (err instanceof Error && err.message === "validation") return;
+                  if (!createPaypalOrderMutation.isError) {
+                    setFormError("Something went wrong with PayPal. Please try again.");
+                  }
+                }}
+              />
+            </div>
+          )}
+
+          {paymentMethod === "paypal" && paypalMode === "card" && (
             <PayPalCardFieldsProvider
               createOrder={async () => {
                 setFormError(null);
