@@ -647,7 +647,6 @@ function OrderFormInner({ products }: OrderFormClientProps) {
               )}
               <PayPalButtons
                 style={{ layout: "vertical", label: "pay" }}
-                fundingSource="paypal"
                 createOrder={async () => {
                   setFormError(null);
                   if (!validate()) throw new Error("validation");
