@@ -674,15 +674,25 @@ function OrderRow({ order }: { order: OrderWithItems }) {
 
 // ── Page ────────────────────────────────────────────────────────────────────
 
+const ALL_PAYMENT_METHODS = ["venmo", "paypal", "cash", "check"] as PaymentMethod[];
+
+function toggleSet<T>(set: Set<T>, value: T): Set<T> {
+  const next = new Set(set);
+  if (next.has(value)) next.delete(value); else next.add(value);
+  return next;
+}
+
 export function AdminOrdersClient() {
   const { data: orders, isLoading, isError } = trpc.orders.listAll.useQuery();
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<OrderStatus | "all">("all");
+  const [statusFilter, setStatusFilter] = useState<Set<OrderStatus>>(new Set());
+  const [paymentFilter, setPaymentFilter] = useState<Set<PaymentMethod>>(new Set());
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
   const filtered = (orders ?? []).filter((o) => {
-    if (statusFilter !== "all" && o.status !== statusFilter) return false;
+    if (statusFilter.size > 0 && !statusFilter.has(o.status)) return false;
+    if (paymentFilter.size > 0 && !paymentFilter.has(o.paymentMethod)) return false;
     if (!matchesSearch(o, search)) return false;
     const orderDate = new Date(o.createdAt);
     if (dateFrom) {
@@ -697,19 +707,30 @@ export function AdminOrdersClient() {
   });
 
   const hasDateFilter = dateFrom || dateTo;
+  const hasAnyFilter = search || hasDateFilter || statusFilter.size > 0 || paymentFilter.size > 0;
 
   return (
     <div className="px-4 py-6">
       <div className="max-w-lg mx-auto">
-        <div className="mb-4">
-          <h1 className="text-2xl font-bold text-blue-900">Orders</h1>
-          {orders && (
-            <p className="text-sm text-blue-600 mt-0.5">{filtered.length} of {orders.length}</p>
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-blue-900">Orders</h1>
+            {orders && (
+              <p className="text-sm text-blue-600 mt-0.5">{filtered.length} of {orders.length}</p>
+            )}
+          </div>
+          {hasAnyFilter && (
+            <button
+              onClick={() => { setSearch(""); setStatusFilter(new Set()); setPaymentFilter(new Set()); setDateFrom(""); setDateTo(""); }}
+              className="text-xs text-blue-600 hover:text-blue-900 underline shrink-0"
+            >
+              Clear all filters
+            </button>
           )}
         </div>
 
         {/* Filters */}
-        <div className="mb-4 space-y-2">
+        <div className="mb-4 space-y-3">
           <input
             type="search"
             placeholder="Search by name, email, or order ID…"
@@ -730,21 +751,31 @@ export function AdminOrdersClient() {
               </button>
             )}
           </div>
-          <div className="flex gap-2 flex-wrap">
-            <button onClick={() => setStatusFilter("all")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                statusFilter === "all" ? "bg-blue-900 text-white" : "border border-sky-200 text-blue-700 hover:bg-sky-50"
-              }`}>
-              All
-            </button>
-            {ALL_STATUSES.map((s) => (
-              <button key={s} onClick={() => setStatusFilter(s)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                  statusFilter === s ? "bg-blue-900 text-white" : "border border-sky-200 text-blue-700 hover:bg-sky-50"
-                }`}>
-                {STATUS_LABELS[s]}
-              </button>
-            ))}
+          <div>
+            <p className="text-xs font-semibold text-sky-400 uppercase tracking-wide mb-1.5">Status</p>
+            <div className="flex gap-2 flex-wrap">
+              {ALL_STATUSES.map((s) => (
+                <button key={s} onClick={() => setStatusFilter((prev) => toggleSet(prev, s))}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                    statusFilter.has(s) ? "bg-blue-900 text-white" : "border border-sky-200 text-blue-700 hover:bg-sky-50"
+                  }`}>
+                  {STATUS_LABELS[s]}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="text-xs font-semibold text-sky-400 uppercase tracking-wide mb-1.5">Payment</p>
+            <div className="flex gap-2 flex-wrap">
+              {ALL_PAYMENT_METHODS.map((m) => (
+                <button key={m} onClick={() => setPaymentFilter((prev) => toggleSet(prev, m))}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                    paymentFilter.has(m) ? "bg-blue-900 text-white" : "border border-sky-200 text-blue-700 hover:bg-sky-50"
+                  }`}>
+                  {PAYMENT_LABELS[m]}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
