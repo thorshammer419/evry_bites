@@ -105,6 +105,8 @@ export class AcsNotifier implements Notifier {
       );
     } else if (event.type === "order.venmo_payment_requested") {
       await this.sendVenmoPaymentRequest(event.order, connectionString);
+    } else if (event.type === "order.paypal_payment_requested") {
+      await this.sendPaypalPaymentRequest(event.order, event.paymentUrl, connectionString);
     } else if (event.type === "user.cash_check_requested") {
       await this.sendCashCheckRequest(event.request, connectionString);
     } else {
@@ -256,6 +258,49 @@ export class AcsNotifier implements Notifier {
     if (result && "pollUntilDone" in result) {
       result.pollUntilDone().catch((err: unknown) =>
         console.error("[notifications] venmo-payment-request poll failed:", err)
+      );
+    }
+  }
+
+  private async sendPaypalPaymentRequest(
+    order: import("./notifier").OrderForNotification & { totalAmount: unknown },
+    paymentUrl: string,
+    connectionString: string
+  ): Promise<void> {
+    const fromEmail = process.env.ACS_FROM_EMAIL;
+    if (!fromEmail) return;
+
+    const ref = order.id.slice(0, 8).toUpperCase();
+    const total = Number(order.totalAmount).toFixed(2);
+    const name = customerName(order);
+
+    const subject = `EvryBites Order #${ref} — Payment Request`;
+    const body = [
+      `Hi ${name},`,
+      "",
+      `Your EvryBites order (#${ref}) is ready for payment via PayPal or credit/debit card.`,
+      "",
+      `Amount due: $${total}`,
+      "",
+      `Pay now: ${paymentUrl}`,
+      "",
+      "Tap the link above to complete your payment securely.",
+      "",
+      "Thank you for your order!",
+    ].join("\n");
+
+    const { EmailClient } = await import("@azure/communication-email");
+    const result = await new EmailClient(connectionString).beginSend({
+      senderAddress: fromEmail,
+      recipients: { to: [{ address: order.customerEmail }] },
+      content: { subject, plainText: body },
+    }).catch((err: unknown) => {
+      console.error("[notifications] paypal-payment-request email failed:", err);
+    });
+
+    if (result && "pollUntilDone" in result) {
+      result.pollUntilDone().catch((err: unknown) =>
+        console.error("[notifications] paypal-payment-request poll failed:", err)
       );
     }
   }

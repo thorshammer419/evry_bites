@@ -457,31 +457,31 @@ export const ordersRouter = router({
         await refundPaypalCapture(existing.paypalCaptureId);
       }
 
-      // If switching to PayPal, create and send an invoice
-      let paypalInvoiceId: string | undefined;
-      if (input.newPaymentMethod === "paypal") {
-        paypalInvoiceId = await sendPaypalInvoice(existing);
-      }
-
       const updated = await db.order.update({
         where: { id: input.id },
         data: {
           paymentMethod: input.newPaymentMethod,
           status: "pending_payment",
-          // Clear PayPal checkout IDs when moving away from PayPal
-          ...(input.newPaymentMethod !== "paypal"
-            ? { paypalCaptureId: null, paypalInvoiceId: null, paypalOrderId: null }
-            : {}),
-          ...(paypalInvoiceId ? { paypalInvoiceId } : {}),
+          paypalCaptureId: null,
+          paypalInvoiceId: null,
+          paypalOrderId: null,
         },
         include: INCLUDE_FULL,
       });
 
-      // If switching to Venmo, email the customer a payment link
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://evrybites.com";
+
       if (input.newPaymentMethod === "venmo") {
         ctx.notifier
           .notify({ type: "order.venmo_payment_requested", order: updated })
           .catch((err) => console.error("[orders] venmo-payment-email failed:", err));
+      }
+
+      if (input.newPaymentMethod === "paypal") {
+        const paymentUrl = `${baseUrl}/order/pay/${updated.id}`;
+        ctx.notifier
+          .notify({ type: "order.paypal_payment_requested", order: updated, paymentUrl })
+          .catch((err) => console.error("[orders] paypal-payment-email failed:", err));
       }
 
       return updated;
@@ -508,6 +508,99 @@ export const ordersRouter = router({
         data: { cashCollected: input.amount },
         include: INCLUDE_FULL,
       });
+    }),
+
+  getForPayment: publicProcedure
+    .input(z.object({ orderId: z.string() }))
+    .query(async ({ input }) => {
+      const order = await db.order.findUnique({
+        where: { id: input.orderId },
+        include: INCLUDE_FULL,
+      });
+      if (!order || order.status !== "pending_payment" || order.paymentMethod !== "paypal") {
+        return null;
+      }
+      return order;
+    }),
+
+  createPaypalOrderForExistingOrder: publicProcedure
+    .input(z.object({ orderId: z.string() }))
+    .mutation(async ({ input }) => {
+      const order = await db.order.findUniqueOrThrow({ where: { id: input.orderId } });
+
+      if (order.status !== "pending_payment" || order.paymentMethod !== "paypal") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Order is not awaiting PayPal payment." });
+      }
+
+      const mode = process.env.PAYPAL_MODE ?? "sandbox";
+      const baseUrl = mode === "live" ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com";
+      const accessToken = await getPaypalAccessToken();
+
+      const paypalRes = await fetch(`${baseUrl}/v2/checkout/orders`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({
+          intent: "CAPTURE",
+          purchase_units: [{ reference_id: order.id, amount: { currency_code: "USD", value: Number(order.totalAmount).toFixed(2) } }],
+        }),
+      });
+
+      if (!paypalRes.ok) {
+        const body = await paypalRes.text().catch(() => "(unreadable)");
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `PayPal error (${paypalRes.status}): ${body}` });
+      }
+
+      const paypalOrder = await paypalRes.json() as { id: string };
+      await db.order.update({ where: { id: order.id }, data: { paypalOrderId: paypalOrder.id } });
+      return { paypalOrderId: paypalOrder.id };
+    }),
+
+  capturePaypalPaymentLink: publicProcedure
+    .input(z.object({ orderId: z.string(), paypalOrderId: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const order = await db.order.findUniqueOrThrow({ where: { id: input.orderId } });
+
+      if (order.status !== "pending_payment") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Order is not pending payment." });
+      }
+
+      const mode = process.env.PAYPAL_MODE ?? "sandbox";
+      const baseUrl = mode === "live" ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com";
+      const accessToken = await getPaypalAccessToken();
+
+      const captureRes = await fetch(`${baseUrl}/v2/checkout/orders/${input.paypalOrderId}/capture`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      });
+
+      if (!captureRes.ok) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Payment capture failed." });
+      }
+
+      const captureData = await captureRes.json() as {
+        payment_source?: { venmo?: unknown };
+        purchase_units?: { payments?: { captures?: { id?: string }[] } }[];
+      };
+
+      const actualPaymentMethod = captureData.payment_source?.venmo ? "venmo" : "paypal";
+      const captureId = captureData.purchase_units?.[0]?.payments?.captures?.[0]?.id;
+
+      const updated = await db.order.update({
+        where: { id: input.orderId },
+        data: {
+          status: "received",
+          paymentMethod: actualPaymentMethod,
+          ...(captureId ? { paypalCaptureId: captureId } : {}),
+        },
+        include: INCLUDE_FULL,
+      });
+
+      // Stock was already decremented when the original order was placed
+      ctx.notifier
+        .notify({ type: "order.received", order: updated })
+        .catch((err) => console.error("[orders] order-received notification failed:", err));
+
+      return updated;
     }),
 
   requestCashCheckApproval: publicProcedure
