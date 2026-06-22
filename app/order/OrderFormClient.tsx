@@ -81,6 +81,7 @@ function OrderFormInner({ products }: OrderFormClientProps) {
   const router = useRouter();
   const { cart, hydrated, clearCart, reconcile } = useCart();
   const [removedItems, setRemovedItems] = useState<string[]>([]);
+  const [redirecting, setRedirecting] = useState(false);
   const hasReconciled = useRef(false);
 
   useEffect(() => {
@@ -238,13 +239,13 @@ function OrderFormInner({ products }: OrderFormClientProps) {
   const grandTotal = lineItems.reduce((sum, item) => sum + item.subtotal, 0);
 
   const submitMutation = trpc.orders.submit.useMutation({
-    onSuccess: (order) => { saveAddressToClerk(); clearCart(); router.push(`/order/confirmation/${order.id}`); },
+    onSuccess: (order) => { saveAddressToClerk(); setRedirecting(true); clearCart(); router.push(`/order/confirmation/${order.id}`); },
     onError: (error) => setFormError(error.message || "Something went wrong. Please try again."),
   });
 
   const createPaypalOrderMutation = trpc.orders.createPaypalOrder.useMutation();
   const capturePaypalOrderMutation = trpc.orders.capturePaypalOrder.useMutation({
-    onSuccess: (order) => { saveAddressToClerk(); clearCart(); router.push(`/order/confirmation/${order.id}`); },
+    onSuccess: (order) => { saveAddressToClerk(); setRedirecting(true); clearCart(); router.push(`/order/confirmation/${order.id}`); },
     onError: () => setFormError("Payment capture failed. Please try again."),
   });
 
@@ -302,7 +303,7 @@ function OrderFormInner({ products }: OrderFormClientProps) {
     submitMutation.mutate(collectFormData());
   };
 
-  if (lineItems.length === 0) {
+  if (lineItems.length === 0 && !redirecting) {
     return (
       <div className="min-h-screen bg-bakery-pattern flex items-center justify-center px-4">
         <div className="text-center">
