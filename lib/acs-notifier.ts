@@ -96,6 +96,8 @@ export class AcsNotifier implements Notifier {
 
     if (event.type === "order.received") {
       await this.sendOrderReceived(event.order, connectionString);
+    } else if (event.type === "order.payment_received") {
+      await this.sendPaymentReceived(event.order, connectionString);
     } else if (event.type === "order.cancelled") {
       await this.sendStatusChanged(
         event.order,
@@ -175,6 +177,82 @@ export class AcsNotifier implements Notifier {
     results.forEach((r, i) => {
       if (r.status === "rejected") {
         console.error(`[notifications] order-received channel ${i} failed:`, r.reason);
+      }
+    });
+  }
+
+  private async sendPaymentReceived(
+    order: import("./notifier").OrderReceivedForNotification,
+    connectionString: string
+  ): Promise<void> {
+    const fromEmail = process.env.ACS_FROM_EMAIL;
+    const fromPhone = process.env.ACS_FROM_PHONE;
+    const ownerEmails = (process.env.OWNER_NOTIFICATION_EMAIL ?? "")
+      .split(",")
+      .map((e) => e.trim())
+      .filter(Boolean);
+
+    const ref = order.id.slice(0, 8).toUpperCase();
+    const total = `$${Number(order.totalAmount).toFixed(2)}`;
+    const name = customerName(order);
+    const itemsList = order.orderItems
+      .map(
+        (i) =>
+          `  • ${i.quantity}x ${i.product.name} (${i.product.unitLabel}) — $${Number(i.unitPrice).toFixed(2)}/ea`
+      )
+      .join("\n");
+
+    const customerSubject = `EvryBites — Payment Received for Order #${ref}`;
+    const customerBody = [
+      `Hi ${name},`,
+      "",
+      `Thank you for your payment! We've received your payment of ${total} for order #${ref}.`,
+      "",
+      `Order summary:`,
+      itemsList,
+      "",
+      `Total paid: ${total}`,
+      "",
+      "Your order is confirmed and we'll be in touch soon. Thank you for supporting EvryBites!",
+    ].join("\n");
+    const customerSms = `EvryBites: Payment of ${total} received for order #${ref}. Thank you!`;
+
+    const ownerSubject = `EvryBites — Payment Received for Order #${ref} from ${name}`;
+    const ownerBody = `Payment received!\n\nOrder #${ref}\nCustomer: ${name}\nEmail: ${order.customerEmail}\nPhone: ${order.customerPhone}\nFulfillment: ${order.fulfillmentType}\nPayment: ${order.paymentMethod}\n\nItems:\n${itemsList}\n\nTotal: ${total}`;
+
+    const { EmailClient } = await import("@azure/communication-email");
+    const { SmsClient } = await import("@azure/communication-sms");
+
+    const results = await Promise.allSettled([
+      fromEmail
+        ? new EmailClient(connectionString).beginSend({
+            senderAddress: fromEmail,
+            recipients: { to: [{ address: order.customerEmail }] },
+            content: { subject: customerSubject, plainText: customerBody },
+          })
+        : Promise.resolve(),
+
+      fromPhone && order.customerPhone
+        ? (() => {
+            const to = toE164(order.customerPhone);
+            return to
+              ? new SmsClient(connectionString).send({ from: fromPhone, to: [to], message: customerSms })
+              : Promise.reject(new Error(`Cannot normalize phone to E.164: ${order.customerPhone}`));
+          })()
+        : Promise.resolve(),
+
+      fromEmail && ownerEmails.length > 0
+        ? new EmailClient(connectionString).beginSend({
+            senderAddress: fromEmail,
+            recipients: { to: ownerEmails.map((address) => ({ address })) },
+            content: { subject: ownerSubject, plainText: ownerBody },
+          })
+        : Promise.resolve(),
+    ]);
+
+    results.forEach((r, i) => {
+      if (r.status === "rejected") {
+        console.error(`[notifications] payment-received channel ${i} failed:`, r.reason);
       }
     });
   }

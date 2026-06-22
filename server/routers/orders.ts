@@ -595,10 +595,11 @@ export const ordersRouter = router({
         include: INCLUDE_FULL,
       });
 
-      // Stock was already decremented when the original order was placed
+      // Stock was already decremented when the original order was placed.
+      // Use payment_received (not order.received) since the customer already got an order confirmation.
       ctx.notifier
-        .notify({ type: "order.received", order: updated })
-        .catch((err) => console.error("[orders] order-received notification failed:", err));
+        .notify({ type: "order.payment_received", order: updated })
+        .catch((err) => console.error("[orders] payment-received notification failed:", err));
 
       return updated;
     }),

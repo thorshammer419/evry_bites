@@ -31,6 +31,7 @@ export interface CashCheckRequestForNotification {
 
 export type OrderEvent =
   | { type: "order.received"; order: OrderReceivedForNotification }
+  | { type: "order.payment_received"; order: OrderReceivedForNotification }
   | { type: "order.status_changed"; order: OrderForNotification; newStatus: OrderStatus }
   | { type: "order.cancelled"; order: OrderForNotification; reason?: string }
   | { type: "order.venmo_payment_requested"; order: OrderForNotification & { totalAmount: unknown } }

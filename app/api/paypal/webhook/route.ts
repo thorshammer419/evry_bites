@@ -42,8 +42,9 @@ export async function POST(req: Request) {
         include: { orderItems: { include: { product: true } } },
       });
 
+      // pending_payment orders are always payment-link payments (original order already got order.received)
       notifier
-        .notify({ type: "order.received", order: updated })
+        .notify({ type: "order.payment_received", order: updated })
         .catch((err) => console.error("[paypal-webhook] capture notification failed:", err));
     }
   }
