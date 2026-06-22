@@ -110,7 +110,7 @@ export class AcsNotifier implements Notifier {
     } else if (event.type === "order.paypal_payment_requested") {
       await this.sendPaypalPaymentRequest(event.order, event.paymentUrl, connectionString);
     } else if (event.type === "order.custom_payment_requested") {
-      await this.sendCustomPaymentRequest(event.order, event.amount, event.paymentUrl, connectionString);
+      await this.sendCustomPaymentRequest(event.order, event.amount, event.paymentUrl, event.paymentType, connectionString);
     } else if (event.type === "order.custom_payment_received") {
       await this.sendCustomPaymentReceived(event.order, event.amount, connectionString);
     } else if (event.type === "user.cash_check_requested") {
@@ -391,6 +391,7 @@ export class AcsNotifier implements Notifier {
     order: import("./notifier").OrderForNotification,
     amount: number,
     paymentUrl: string,
+    paymentType: "paypal" | "venmo",
     connectionString: string
   ): Promise<void> {
     const fromEmail = process.env.ACS_FROM_EMAIL;
@@ -400,17 +401,30 @@ export class AcsNotifier implements Notifier {
     const name = customerName(order);
 
     const subject = `EvryBites — Payment Request for $${amount.toFixed(2)}`;
-    const body = [
-      `Hi ${name},`,
-      "",
-      `EvryBites has sent you a payment request of $${amount.toFixed(2)} related to order #${ref}.`,
-      "",
-      `Pay now: ${paymentUrl}`,
-      "",
-      "Tap the link above to complete your payment securely via PayPal or credit/debit card.",
-      "",
-      "Thank you for your business!",
-    ].join("\n");
+
+    const body = paymentType === "venmo"
+      ? [
+          `Hi ${name},`,
+          "",
+          `EvryBites has sent you a payment request of $${amount.toFixed(2)} related to order #${ref}.`,
+          "",
+          `Pay now via Venmo: ${paymentUrl}`,
+          "",
+          "Tap the link above to open Venmo pre-filled with the payment details.",
+          "",
+          "Thank you for your business!",
+        ].join("\n")
+      : [
+          `Hi ${name},`,
+          "",
+          `EvryBites has sent you a payment request of $${amount.toFixed(2)} related to order #${ref}.`,
+          "",
+          `Pay now: ${paymentUrl}`,
+          "",
+          "Tap the link above to complete your payment securely via PayPal or credit/debit card.",
+          "",
+          "Thank you for your business!",
+        ].join("\n");
 
     const { EmailClient } = await import("@azure/communication-email");
     const result = await new EmailClient(connectionString).beginSend({

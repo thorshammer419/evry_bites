@@ -391,8 +391,9 @@ function ChangePaymentModal({ currentMethod, onConfirm, onClose, isPending }: {
   );
 }
 
-function SendCustomPaymentModal({ orderTotal, onConfirm, onClose, isPending }: {
+function SendCustomPaymentModal({ orderTotal, paymentMethod, onConfirm, onClose, isPending }: {
   orderTotal: number;
+  paymentMethod: string;
   onConfirm: (amount: number) => void;
   onClose: () => void;
   isPending: boolean;
@@ -400,13 +401,17 @@ function SendCustomPaymentModal({ orderTotal, onConfirm, onClose, isPending }: {
   const [rawAmount, setRawAmount] = useState(orderTotal.toFixed(2));
   const parsed = parseFloat(rawAmount);
   const valid = !isNaN(parsed) && parsed > 0;
+  const isVenmo = paymentMethod === "venmo";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5">
         <h2 className="text-lg font-bold text-blue-900 mb-1">Send Custom Payment Link</h2>
         <p className="text-sm text-blue-700 mb-4">
-          Enter the amount to request. The customer will receive an email with a link to pay via PayPal. The order status will <span className="font-semibold">not</span> change automatically when paid.
+          Enter the amount to request. The customer will receive an email with a {isVenmo ? "Venmo payment link" : "link to pay via PayPal"}.{" "}
+          {isVenmo
+            ? "Venmo payments are not tracked automatically — advance the order status manually when payment is received."
+            : <>The order will advance to <span className="font-semibold">Received</span> automatically once the full amount is collected.</>}
         </p>
         <label className="block text-sm font-medium text-blue-900 mb-1">Amount ($)</label>
         <input
@@ -618,7 +623,7 @@ function OrderRow({ order }: { order: OrderWithItems }) {
                 Change Payment Method
               </button>
             )}
-            {order.status === "pending_payment" && (
+            {order.status === "pending_payment" && (order.paymentMethod === "paypal" || order.paymentMethod === "venmo") && (
               <button
                 onClick={() => setShowCustomPaymentModal(true)}
                 disabled={isMutating}
@@ -697,6 +702,7 @@ function OrderRow({ order }: { order: OrderWithItems }) {
       {showCustomPaymentModal && (
         <SendCustomPaymentModal
           orderTotal={total}
+          paymentMethod={order.paymentMethod}
           isPending={sendCustomPayment.isPending}
           onClose={() => setShowCustomPaymentModal(false)}
           onConfirm={(amount) => sendCustomPayment.mutate({ orderId: order.id, amount })}

@@ -511,9 +511,21 @@ export const ordersRouter = router({
       const isRefund = REFUND_STATUSES.includes(existing.status);
       const newStatus = isRefund ? "refunded" : "cancelled";
 
-      // Issue PayPal refund if payment was captured via checkout
+      // Refund main PayPal checkout capture if present
       if (existing.paypalCaptureId) {
         await refundPaypalCapture(existing.paypalCaptureId);
+      }
+
+      // Refund any paid custom payment link captures
+      const paidCustomCaptures = await db.customPaymentRequest.findMany({
+        where: { orderId: existing.id, paid: true, paypalCaptureId: { not: null } },
+      });
+      for (const cp of paidCustomCaptures) {
+        if (cp.paypalCaptureId) {
+          await refundPaypalCapture(cp.paypalCaptureId).catch((err) =>
+            console.error(`[orders] failed to refund custom payment ${cp.id}:`, err)
+          );
+        }
       }
 
       const order = await db.order.update({
@@ -612,12 +624,29 @@ export const ordersRouter = router({
 
   logCashCollected: publicProcedure
     .input(z.object({ id: z.string(), amount: z.string() }))
-    .mutation(async ({ input }) => {
-      return db.order.update({
+    .mutation(async ({ input, ctx }) => {
+      const order = await db.order.findUniqueOrThrow({ where: { id: input.id } });
+
+      const updated = await db.order.update({
         where: { id: input.id },
         data: { cashCollected: input.amount },
         include: INCLUDE_FULL,
       });
+
+      // Auto-advance to received when full amount is collected on a pending_payment order
+      if (order.status === "pending_payment" && Number(input.amount) >= Number(order.totalAmount)) {
+        const advanced = await db.order.update({
+          where: { id: input.id },
+          data: { status: "received" },
+          include: INCLUDE_FULL,
+        });
+        ctx.notifier
+          .notify({ type: "order.received", order: advanced })
+          .catch((err) => console.error("[orders] cash-auto-received notification failed:", err));
+        return advanced;
+      }
+
+      return updated;
     }),
 
   getForPayment: publicProcedure
@@ -720,25 +749,29 @@ export const ordersRouter = router({
       amount: z.number().positive(),
     }))
     .mutation(async ({ input, ctx }) => {
-      const order = await db.order.findUnique({
-        where: { id: input.orderId },
-      });
+      const order = await db.order.findUnique({ where: { id: input.orderId } });
       if (!order) throw new TRPCError({ code: "NOT_FOUND", message: "Order not found" });
 
-      const request = await db.customPaymentRequest.create({
-        data: {
-          orderId: input.orderId,
-          amount: input.amount,
-        },
-      });
+      if (order.paymentMethod === "venmo") {
+        // Venmo: send a deep-link email; no CustomPaymentRequest record needed
+        const venmoHandle = process.env.NEXT_PUBLIC_VENMO_HANDLE ?? "@evrybites";
+        const note = encodeURIComponent(`Order #${order.id.slice(0, 8).toUpperCase()}`);
+        const venmoUrl = `https://venmo.com/${venmoHandle.replace("@", "")}?txn=pay&amount=${input.amount.toFixed(2)}&note=${note}`;
+        ctx.notifier
+          .notify({ type: "order.custom_payment_requested", order, amount: input.amount, paymentUrl: venmoUrl, paymentType: "venmo" })
+          .catch((err) => console.error("[orders] custom-venmo-link notification failed:", err));
+        return { requestId: null };
+      }
 
+      // PayPal: create a tracked CustomPaymentRequest and send payment page link
+      const request = await db.customPaymentRequest.create({
+        data: { orderId: input.orderId, amount: input.amount },
+      });
       const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://evrybites.com";
       const paymentUrl = `${baseUrl}/order/pay/custom/${request.id}`;
-
       ctx.notifier
-        .notify({ type: "order.custom_payment_requested", order, amount: input.amount, paymentUrl })
-        .catch((err) => console.error("[orders] custom-payment-link notification failed:", err));
-
+        .notify({ type: "order.custom_payment_requested", order, amount: input.amount, paymentUrl, paymentType: "paypal" })
+        .catch((err) => console.error("[orders] custom-paypal-link notification failed:", err));
       return { requestId: request.id };
     }),
 
@@ -802,15 +835,40 @@ export const ordersRouter = router({
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `PayPal capture error: ${text}` });
       }
 
+      const captureData = await res.json() as {
+        purchase_units?: { payments?: { captures?: { id?: string }[] } }[];
+      };
+      const captureId = captureData.purchase_units?.[0]?.payments?.captures?.[0]?.id;
+
       const updated = await db.customPaymentRequest.update({
         where: { id: input.requestId },
-        data: { paid: true },
+        data: { paid: true, ...(captureId ? { paypalCaptureId: captureId } : {}) },
         include: { order: true },
       });
 
-      ctx.notifier
-        .notify({ type: "order.custom_payment_received", order: updated.order, amount: Number(updated.amount) })
-        .catch((err) => console.error("[orders] custom-payment-received notification failed:", err));
+      // Sum all paid custom payments for this order to check if fully covered
+      const allPaid = await db.customPaymentRequest.findMany({
+        where: { orderId: updated.orderId, paid: true },
+      });
+      const totalPaid = allPaid.reduce((sum, p) => sum + Number(p.amount), 0);
+      const orderTotal = Number(updated.order.totalAmount);
+
+      if (updated.order.status === "pending_payment" && totalPaid >= orderTotal) {
+        // Fully paid — advance order and send payment-received notification
+        const advanced = await db.order.update({
+          where: { id: updated.orderId },
+          data: { status: "received" },
+          include: INCLUDE_FULL,
+        });
+        ctx.notifier
+          .notify({ type: "order.payment_received", order: advanced })
+          .catch((err) => console.error("[orders] custom-payment-auto-received notification failed:", err));
+      } else {
+        // Partial — notify but don't advance
+        ctx.notifier
+          .notify({ type: "order.custom_payment_received", order: updated.order, amount: Number(updated.amount) })
+          .catch((err) => console.error("[orders] custom-payment-received notification failed:", err));
+      }
 
       return { success: true };
     }),

@@ -70,13 +70,14 @@ model Order {
 }
 
 model CustomPaymentRequest {
-  id            String   @id @default(cuid())
-  orderId       String
-  order         Order    @relation(fields: [orderId], references: [id])
-  amount        Decimal  @db.Decimal(10, 2)
-  paypalOrderId String?
-  paid          Boolean  @default(false)
-  createdAt     DateTime @default(now())
+  id              String   @id @default(cuid())
+  orderId         String
+  order           Order    @relation(fields: [orderId], references: [id])
+  amount          Decimal  @db.Decimal(10, 2)
+  paypalOrderId   String?
+  paypalCaptureId String?
+  paid            Boolean  @default(false)
+  createdAt       DateTime @default(now())
 }
 
 model OrderItem {
