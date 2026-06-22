@@ -386,6 +386,116 @@ export const ordersRouter = router({
       return order;
     }),
 
+  createPaypalOrderForPayerInfo: publicProcedure
+    .input(z.object({
+      items: z.array(z.object({ productId: z.string(), quantity: z.number().int().positive() })).min(1),
+    }))
+    .mutation(async ({ input }) => {
+      const { totalAmount } = await resolveProducts(input.items);
+      const mode = process.env.PAYPAL_MODE ?? "sandbox";
+      const baseUrl = mode === "live" ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com";
+      const token = await getPaypalAccessToken();
+
+      const res = await fetch(`${baseUrl}/v2/checkout/orders`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          intent: "CAPTURE",
+          purchase_units: [{ amount: { currency_code: "USD", value: totalAmount.toFixed(2) } }],
+        }),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "(unreadable)");
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `PayPal order creation failed: ${text}` });
+      }
+      const data = await res.json() as { id: string };
+      return { paypalOrderId: data.id };
+    }),
+
+  capturePaypalWithPayerInfo: publicProcedure
+    .input(z.object({
+      paypalOrderId: z.string(),
+      fulfillmentType: z.enum(["local_delivery", "shipping"]),
+      addressLine1: z.string().min(1),
+      city: z.string().min(1),
+      state: z.string().length(2),
+      zip: z.string().regex(/^\d{5}$/),
+      notes: z.string().optional(),
+      items: z.array(z.object({ productId: z.string(), quantity: z.number().int().positive() })).min(1),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { productMap, totalAmount } = await resolveProducts(input.items);
+      const mode = process.env.PAYPAL_MODE ?? "sandbox";
+      const baseUrl = mode === "live" ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com";
+      const token = await getPaypalAccessToken();
+
+      const captureRes = await fetch(`${baseUrl}/v2/checkout/orders/${input.paypalOrderId}/capture`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({}),
+      });
+      if (!captureRes.ok) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Payment capture failed." });
+      }
+
+      const captureData = await captureRes.json() as {
+        payer?: {
+          name?: { given_name?: string; surname?: string };
+          email_address?: string;
+          phone?: { phone_number?: { national_number?: string } };
+        };
+        payment_source?: { venmo?: unknown };
+        purchase_units?: { payments?: { captures?: { id?: string }[] } }[];
+      };
+
+      const actualPaymentMethod = captureData.payment_source?.venmo ? "venmo" : "paypal";
+      const captureId = captureData.purchase_units?.[0]?.payments?.captures?.[0]?.id;
+      const firstName = captureData.payer?.name?.given_name ?? "";
+      const lastName = captureData.payer?.name?.surname ?? "";
+      const customerEmail = captureData.payer?.email_address ?? "";
+      const customerPhone = captureData.payer?.phone?.phone_number?.national_number ?? "";
+
+      const order = await db.order.create({
+        data: {
+          firstName,
+          lastName,
+          customerEmail,
+          customerPhone,
+          fulfillmentType: input.fulfillmentType,
+          addressLine1: input.addressLine1,
+          city: input.city,
+          state: input.state,
+          zip: input.zip,
+          paymentMethod: actualPaymentMethod,
+          notes: input.notes,
+          status: "received",
+          totalAmount: totalAmount.toFixed(2),
+          paypalOrderId: input.paypalOrderId,
+          ...(captureId ? { paypalCaptureId: captureId } : {}),
+          orderItems: {
+            create: input.items.map((item) => {
+              const unitPrice = Number(productMap[item.productId].price);
+              return {
+                productId: item.productId,
+                quantity: item.quantity,
+                unitPrice: unitPrice.toFixed(2),
+                subtotal: (unitPrice * item.quantity).toFixed(2),
+              };
+            }),
+          },
+        },
+        include: INCLUDE_FULL,
+      });
+
+      await decrementStock(input.items);
+
+      ctx.notifier
+        .notify({ type: "order.received", order })
+        .catch((err) => console.error("[orders] order-received notification failed:", err));
+
+      return order;
+    }),
+
   cancelOrder: publicProcedure
     .input(z.object({ id: z.string(), reason: z.string().optional() }))
     .mutation(async ({ input, ctx }) => {

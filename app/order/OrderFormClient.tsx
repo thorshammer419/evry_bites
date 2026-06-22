@@ -104,11 +104,36 @@ function OrderFormInner({ products }: OrderFormClientProps) {
   const [paypalMode, setPaypalMode] = useState<"button" | "card">("button");
   const [notes, setNotes] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
+  const [usePaypalInfo, setUsePaypalInfo] = useState(false);
+
+  // Stores items + fulfillment data for the PayPal-info capture path (no DB order pre-created)
+  const pendingPaypalInfoRef = useRef<{
+    paypalOrderId: string;
+    items: { productId: string; quantity: number }[];
+    fulfillmentType: FulfillmentType;
+    addressLine1: string;
+    city: string;
+    state: string;
+    zip: string;
+    notes: string;
+  } | null>(null);
 
   const { user, isLoaded: clerkLoaded, isSignedIn } = useUser();
   const isCashCheck = paymentMethod === "cash" || paymentMethod === "check";
   const cashCheckApproved = Boolean(isSignedIn && user?.publicMetadata?.cashCheckApproved);
   const cashCheckPending = Boolean(isSignedIn && !cashCheckApproved && user?.unsafeMetadata?.cashCheckPending);
+
+  // Show toggle only for PayPal button mode when not signed in
+  const showPaypalInfoToggle = paymentMethod === "paypal" && paypalMode === "button" && clerkLoaded && !isSignedIn;
+
+  // Auto-enable toggle when switching to PayPal button (unsigned), auto-disable otherwise
+  useEffect(() => {
+    if (paymentMethod === "paypal" && paypalMode === "button" && !isSignedIn) {
+      setUsePaypalInfo(true);
+    } else {
+      setUsePaypalInfo(false);
+    }
+  }, [paymentMethod, paypalMode, isSignedIn]);
 
   // Ref keeps the latest handler without causing the autocomplete to re-initialize
   const handlePlaceSelectedRef = useRef<(components: google.maps.GeocoderAddressComponent[]) => void>(() => {});
@@ -249,6 +274,13 @@ function OrderFormInner({ products }: OrderFormClientProps) {
     onError: () => setFormError("Payment capture failed. Please try again."),
   });
 
+  // PayPal-info flow: no DB order pre-created; payer data comes from capture response
+  const createPaypalOrderForPayerInfoMutation = trpc.orders.createPaypalOrderForPayerInfo.useMutation();
+  const capturePaypalWithPayerInfoMutation = trpc.orders.capturePaypalWithPayerInfo.useMutation({
+    onSuccess: (order) => { setRedirecting(true); clearCart(); router.push(`/order/confirmation/${order.id}`); },
+    onError: () => setFormError("Payment capture failed. Please try again."),
+  });
+
   const [approvalRequested, setApprovalRequested] = useState(false);
   const requestApprovalMutation = trpc.orders.requestCashCheckApproval.useMutation({
     onSuccess: () => {
@@ -258,7 +290,9 @@ function OrderFormInner({ products }: OrderFormClientProps) {
   });
 
   const inputClass = "w-full rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-blue-900 focus:outline-none focus:ring-2 focus:ring-sky-400";
+  const inputDisabledClass = "w-full rounded-xl border border-sky-100 bg-sky-50/50 px-4 py-3 text-blue-400 cursor-not-allowed select-none";
   const labelClass = "block text-sm font-medium text-blue-800 mb-1";
+  const labelDisabledClass = "block text-sm font-medium text-blue-400 mb-1";
   const sectionHeaderClass = "text-sm font-semibold text-blue-900 uppercase tracking-wide mb-3";
 
   function collectFormData() {
@@ -278,11 +312,25 @@ function OrderFormInner({ products }: OrderFormClientProps) {
     };
   }
 
+  function collectFulfillmentData() {
+    return {
+      fulfillmentType,
+      addressLine1: addressLine1.trim(),
+      city: city.trim(),
+      state,
+      zip: zip.trim(),
+      notes: notes.trim(),
+      items: lineItems.map((item) => ({ productId: item.product.id, quantity: item.quantity })),
+    };
+  }
+
   function validate(): boolean {
-    if (!firstName.trim()) { setFormError("Please enter your first name."); return false; }
-    if (!lastName.trim()) { setFormError("Please enter your last name."); return false; }
-    if (!customerEmail.trim()) { setFormError("Please enter your email address."); return false; }
-    if (!customerPhone.trim()) { setFormError("Please enter your phone number."); return false; }
+    if (!usePaypalInfo) {
+      if (!firstName.trim()) { setFormError("Please enter your first name."); return false; }
+      if (!lastName.trim()) { setFormError("Please enter your last name."); return false; }
+      if (!customerEmail.trim()) { setFormError("Please enter your email address."); return false; }
+      if (!customerPhone.trim()) { setFormError("Please enter your phone number."); return false; }
+    }
     if (!addressLine1.trim()) { setFormError("Please enter your address."); return false; }
     if (!city.trim()) { setFormError("Please enter your city."); return false; }
     if (!zip.trim() || !/^\d{5}$/.test(zip.trim())) { setFormError("Please enter a valid 5-digit ZIP code."); return false; }
@@ -325,17 +373,68 @@ function OrderFormInner({ products }: OrderFormClientProps) {
 
   const isPayPalMethod = paymentMethod === "paypal" || paymentMethod === "venmo";
 
-  const isPaypalFormReady =
-    firstName.trim() !== "" &&
-    lastName.trim() !== "" &&
-    customerEmail.trim() !== "" &&
-    customerPhone.trim() !== "" &&
+  const addressFulfillmentReady =
     addressLine1.trim() !== "" &&
     city.trim() !== "" &&
     /^\d{5}$/.test(zip.trim()) &&
     lineItems.length > 0 &&
     (fulfillmentType !== "local_delivery" ||
       (city.trim().toLowerCase() === "rapid city" && state === "SD"));
+
+  const isPaypalFormReady = usePaypalInfo
+    ? addressFulfillmentReady
+    : addressFulfillmentReady &&
+      firstName.trim() !== "" &&
+      lastName.trim() !== "" &&
+      customerEmail.trim() !== "" &&
+      customerPhone.trim() !== "";
+
+  // Shared PayPal button handlers — switch between the two flows based on usePaypalInfo
+  const paypalCreateOrder = async () => {
+    setFormError(null);
+    if (!validate()) throw new Error("validation");
+    try {
+      if (usePaypalInfo) {
+        const fulfillment = collectFulfillmentData();
+        const result = await createPaypalOrderForPayerInfoMutation.mutateAsync({ items: fulfillment.items });
+        pendingPaypalInfoRef.current = { paypalOrderId: result.paypalOrderId, ...fulfillment };
+        return result.paypalOrderId;
+      } else {
+        const result = await createPaypalOrderMutation.mutateAsync(collectFormData());
+        pendingOrderRef.current = result;
+        return result.paypalOrderId;
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      setFormError(`PayPal error: ${msg}`);
+      throw err;
+    }
+  };
+
+  const paypalOnApprove = async () => {
+    if (usePaypalInfo) {
+      if (!pendingPaypalInfoRef.current) return;
+      const { paypalOrderId, ...fulfillment } = pendingPaypalInfoRef.current;
+      await capturePaypalWithPayerInfoMutation.mutateAsync({ paypalOrderId, ...fulfillment });
+    } else {
+      if (!pendingOrderRef.current) return;
+      await capturePaypalOrderMutation.mutateAsync(pendingOrderRef.current);
+    }
+  };
+
+  const venmoCreateOrder = async () => {
+    setFormError(null);
+    if (!validate()) throw new Error("validation");
+    try {
+      const result = await createPaypalOrderMutation.mutateAsync(collectFormData());
+      pendingOrderRef.current = result;
+      return result.paypalOrderId;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      setFormError(`Venmo error: ${msg}`);
+      throw err;
+    }
+  };
 
   return (
     <div className="min-h-screen bg-bakery-pattern">
@@ -350,106 +449,8 @@ function OrderFormInner({ products }: OrderFormClientProps) {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Contact Information */}
-          <section className="bg-white rounded-3xl shadow-sm border border-sky-100 p-4">
-            <h2 className={sectionHeaderClass}>Contact Information</h2>
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label htmlFor="firstName" className={labelClass}>First Name</label>
-                  <input id="firstName" type="text" required value={firstName}
-                    onChange={(e) => setFirstName(e.target.value)}
-                    className={inputClass} placeholder="Jane" autoComplete="given-name" />
-                </div>
-                <div>
-                  <label htmlFor="lastName" className={labelClass}>Last Name</label>
-                  <input id="lastName" type="text" required value={lastName}
-                    onChange={(e) => setLastName(e.target.value)}
-                    className={inputClass} placeholder="Smith" autoComplete="family-name" />
-                </div>
-              </div>
-              <div>
-                <label htmlFor="customerEmail" className={labelClass}>Email Address</label>
-                <input id="customerEmail" type="email" required value={customerEmail}
-                  onChange={(e) => setCustomerEmail(e.target.value)}
-                  className={inputClass} placeholder="jane@example.com" autoComplete="email" />
-              </div>
-              <div>
-                <label htmlFor="customerPhone" className={labelClass}>Phone Number</label>
-                <input id="customerPhone" type="tel" required value={customerPhone}
-                  onChange={(e) => setCustomerPhone(e.target.value.replace(/[^\d\s\-().+]/g, ""))}
-                  onBlur={(e) => setCustomerPhone(formatPhone(e.target.value))}
-                  className={inputClass} placeholder="(605) 555-0100" autoComplete="tel" />
-              </div>
-            </div>
-          </section>
 
-          {/* Fulfillment */}
-          <section className="bg-white rounded-3xl shadow-sm border border-sky-100 p-4">
-            <h2 className={sectionHeaderClass}>Fulfillment</h2>
-            <div className="space-y-3 mb-4">
-              {([
-                { value: "local_delivery", label: "Local Delivery", desc: "Available within the Rapid City, SD area" },
-                { value: "shipping", label: "Shipping", desc: "Shipped to your address" },
-              ] as { value: FulfillmentType; label: string; desc: string }[]).map((option) => (
-                <label key={option.value} className={`flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition-colors ${
-                  fulfillmentType === option.value ? "border-purple-800 bg-sky-50" : "border-sky-100 bg-white hover:border-sky-200"}`}>
-                  <input type="radio" name="fulfillmentType" value={option.value}
-                    checked={fulfillmentType === option.value}
-                    onChange={() => {
-                      setFulfillmentType(option.value);
-                      if (option.value === "shipping" && paymentMethod === "cash") {
-                        setPaymentMethod("paypal");
-                      }
-                    }} className="mt-0.5 accent-purple-800" />
-                  <div>
-                    <p className="font-semibold text-blue-900">{option.label}</p>
-                    <p className="text-xs text-sky-600">{option.desc}</p>
-                  </div>
-                </label>
-              ))}
-            </div>
-
-            {fulfillmentType === "local_delivery" && (
-              <p className="text-xs text-blue-700 bg-sky-50 border border-sky-200 rounded-xl px-3 py-2 mb-4">
-                Local delivery is available within the Rapid City, SD area
-              </p>
-            )}
-
-            <div className="space-y-3">
-              <div>
-                <label htmlFor="addressLine1" className={labelClass}>
-                  {fulfillmentType === "local_delivery" ? "Delivery Address" : "Shipping Address"}
-                </label>
-                <input id="addressLine1" ref={addressCallbackRef} type="text" required
-                  onChange={(e) => setAddressLine1(e.target.value)}
-                  className={inputClass} placeholder="Start typing your address…" autoComplete="off" />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label htmlFor="city" className={labelClass}>City</label>
-                  <input id="city" type="text" required value={city}
-                    onChange={(e) => setCity(e.target.value)}
-                    className={inputClass} placeholder="Rapid City" autoComplete="address-level2" />
-                </div>
-                <div>
-                  <label htmlFor="state" className={labelClass}>State</label>
-                  <select id="state" required value={state} onChange={(e) => setState(e.target.value)}
-                    className={inputClass} autoComplete="address-level1">
-                    {US_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                </div>
-              </div>
-              <div>
-                <label htmlFor="zip" className={labelClass}>ZIP Code</label>
-                <input id="zip" type="text" required value={zip}
-                  onChange={(e) => setZip(e.target.value.replace(/\D/g, "").slice(0, 5))}
-                  className={inputClass} placeholder="57701" autoComplete="postal-code" maxLength={5} />
-              </div>
-            </div>
-          </section>
-
-          {/* Payment */}
+          {/* Payment Method — moved to top */}
           <section className="bg-white rounded-3xl shadow-sm border border-sky-100 p-4">
             <h2 className={sectionHeaderClass}>Payment Method</h2>
             <div className="space-y-3">
@@ -541,6 +542,144 @@ function OrderFormInner({ products }: OrderFormClientProps) {
             )}
           </section>
 
+          {/* Contact Information */}
+          <section className="bg-white rounded-3xl shadow-sm border border-sky-100 p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className={sectionHeaderClass.replace("mb-3", "mb-0")}>Contact Information</h2>
+              {showPaypalInfoToggle && (
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <span className="text-xs font-medium text-blue-700">Use PayPal info</span>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={usePaypalInfo}
+                    onClick={() => setUsePaypalInfo((v) => !v)}
+                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-sky-400 ${
+                      usePaypalInfo ? "bg-purple-800" : "bg-sky-200"
+                    }`}
+                  >
+                    <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
+                      usePaypalInfo ? "translate-x-4" : "translate-x-0.5"
+                    }`} />
+                  </button>
+                </label>
+              )}
+            </div>
+
+            {usePaypalInfo && (
+              <p className="text-xs text-sky-600 bg-sky-50 border border-sky-200 rounded-xl px-3 py-2 mb-3">
+                Your name, email, and phone will be filled automatically from your PayPal account after payment.
+              </p>
+            )}
+
+            <div className={`space-y-4 ${usePaypalInfo ? "opacity-40 pointer-events-none" : ""}`}>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="firstName" className={usePaypalInfo ? labelDisabledClass : labelClass}>First Name</label>
+                  <input id="firstName" type="text" value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    disabled={usePaypalInfo}
+                    className={usePaypalInfo ? inputDisabledClass : inputClass}
+                    placeholder={usePaypalInfo ? "From PayPal" : "Jane"}
+                    autoComplete="given-name" />
+                </div>
+                <div>
+                  <label htmlFor="lastName" className={usePaypalInfo ? labelDisabledClass : labelClass}>Last Name</label>
+                  <input id="lastName" type="text" value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                    disabled={usePaypalInfo}
+                    className={usePaypalInfo ? inputDisabledClass : inputClass}
+                    placeholder={usePaypalInfo ? "From PayPal" : "Smith"}
+                    autoComplete="family-name" />
+                </div>
+              </div>
+              <div>
+                <label htmlFor="customerEmail" className={usePaypalInfo ? labelDisabledClass : labelClass}>Email Address</label>
+                <input id="customerEmail" type="email" value={customerEmail}
+                  onChange={(e) => setCustomerEmail(e.target.value)}
+                  disabled={usePaypalInfo}
+                  className={usePaypalInfo ? inputDisabledClass : inputClass}
+                  placeholder={usePaypalInfo ? "From PayPal" : "jane@example.com"}
+                  autoComplete="email" />
+              </div>
+              <div>
+                <label htmlFor="customerPhone" className={usePaypalInfo ? labelDisabledClass : labelClass}>Phone Number</label>
+                <input id="customerPhone" type="tel" value={customerPhone}
+                  onChange={(e) => setCustomerPhone(e.target.value.replace(/[^\d\s\-().+]/g, ""))}
+                  onBlur={(e) => setCustomerPhone(formatPhone(e.target.value))}
+                  disabled={usePaypalInfo}
+                  className={usePaypalInfo ? inputDisabledClass : inputClass}
+                  placeholder={usePaypalInfo ? "From PayPal" : "(605) 555-0100"}
+                  autoComplete="tel" />
+              </div>
+            </div>
+          </section>
+
+          {/* Fulfillment */}
+          <section className="bg-white rounded-3xl shadow-sm border border-sky-100 p-4">
+            <h2 className={sectionHeaderClass}>Fulfillment</h2>
+            <div className="space-y-3 mb-4">
+              {([
+                { value: "local_delivery", label: "Local Delivery", desc: "Available within the Rapid City, SD area" },
+                { value: "shipping", label: "Shipping", desc: "Shipped to your address" },
+              ] as { value: FulfillmentType; label: string; desc: string }[]).map((option) => (
+                <label key={option.value} className={`flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition-colors ${
+                  fulfillmentType === option.value ? "border-purple-800 bg-sky-50" : "border-sky-100 bg-white hover:border-sky-200"}`}>
+                  <input type="radio" name="fulfillmentType" value={option.value}
+                    checked={fulfillmentType === option.value}
+                    onChange={() => {
+                      setFulfillmentType(option.value);
+                      if (option.value === "shipping" && paymentMethod === "cash") {
+                        setPaymentMethod("paypal");
+                      }
+                    }} className="mt-0.5 accent-purple-800" />
+                  <div>
+                    <p className="font-semibold text-blue-900">{option.label}</p>
+                    <p className="text-xs text-sky-600">{option.desc}</p>
+                  </div>
+                </label>
+              ))}
+            </div>
+
+            {fulfillmentType === "local_delivery" && (
+              <p className="text-xs text-blue-700 bg-sky-50 border border-sky-200 rounded-xl px-3 py-2 mb-4">
+                Local delivery is available within the Rapid City, SD area
+              </p>
+            )}
+
+            <div className="space-y-3">
+              <div>
+                <label htmlFor="addressLine1" className={labelClass}>
+                  {fulfillmentType === "local_delivery" ? "Delivery Address" : "Shipping Address"}
+                </label>
+                <input id="addressLine1" ref={addressCallbackRef} type="text" required
+                  onChange={(e) => setAddressLine1(e.target.value)}
+                  className={inputClass} placeholder="Start typing your address…" autoComplete="off" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="city" className={labelClass}>City</label>
+                  <input id="city" type="text" required value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                    className={inputClass} placeholder="Rapid City" autoComplete="address-level2" />
+                </div>
+                <div>
+                  <label htmlFor="state" className={labelClass}>State</label>
+                  <select id="state" required value={state} onChange={(e) => setState(e.target.value)}
+                    className={inputClass} autoComplete="address-level1">
+                    {US_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label htmlFor="zip" className={labelClass}>ZIP Code</label>
+                <input id="zip" type="text" required value={zip}
+                  onChange={(e) => setZip(e.target.value.replace(/\D/g, "").slice(0, 5))}
+                  className={inputClass} placeholder="57701" autoComplete="postal-code" maxLength={5} />
+              </div>
+            </div>
+          </section>
+
           {/* Notes */}
           <section className="bg-white rounded-3xl shadow-sm border border-sky-100 p-4">
             <h2 className={sectionHeaderClass}>Order Notes (Optional)</h2>
@@ -611,19 +750,7 @@ function OrderFormInner({ products }: OrderFormClientProps) {
               <PayPalButtons
                 style={{ layout: "vertical", label: "pay" }}
                 fundingSource="venmo"
-                createOrder={async () => {
-                  setFormError(null);
-                  if (!validate()) throw new Error("validation");
-                  try {
-                    const result = await createPaypalOrderMutation.mutateAsync(collectFormData());
-                    pendingOrderRef.current = result;
-                    return result.paypalOrderId;
-                  } catch (err) {
-                    const msg = err instanceof Error ? err.message : "Unknown error";
-                    setFormError(`Venmo error: ${msg}`);
-                    throw err;
-                  }
-                }}
+                createOrder={venmoCreateOrder}
                 onApprove={async () => {
                   if (!pendingOrderRef.current) return;
                   await capturePaypalOrderMutation.mutateAsync(pendingOrderRef.current);
@@ -648,28 +775,12 @@ function OrderFormInner({ products }: OrderFormClientProps) {
               )}
               <PayPalButtons
                 style={{ layout: "vertical", label: "pay" }}
-                createOrder={async () => {
-                  setFormError(null);
-                  if (!validate()) throw new Error("validation");
-                  try {
-                    const result = await createPaypalOrderMutation.mutateAsync(collectFormData());
-                    pendingOrderRef.current = result;
-                    return result.paypalOrderId;
-                  } catch (err) {
-                    const msg = err instanceof Error ? err.message : "Unknown error";
-                    setFormError(`PayPal error: ${msg}`);
-                    throw err;
-                  }
-                }}
-                onApprove={async () => {
-                  if (!pendingOrderRef.current) return;
-                  await capturePaypalOrderMutation.mutateAsync(pendingOrderRef.current);
-                }}
+                createOrder={paypalCreateOrder}
+                onApprove={paypalOnApprove}
                 onError={(err) => {
                   if (err instanceof Error && err.message === "validation") return;
-                  if (!createPaypalOrderMutation.isError) {
-                    setFormError("Something went wrong with PayPal. Please try again.");
-                  }
+                  const isPending = createPaypalOrderMutation.isError || createPaypalOrderForPayerInfoMutation.isError;
+                  if (!isPending) setFormError("Something went wrong with PayPal. Please try again.");
                 }}
               />
             </div>
