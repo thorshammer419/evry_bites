@@ -419,7 +419,7 @@ export const ordersRouter = router({
       const venmoReminder =
         existing.paymentMethod === "venmo"
           ? {
-              handle: process.env.NEXT_PUBLIC_VENMO_HANDLE ?? "@thorshammer419",
+              handle: process.env.NEXT_PUBLIC_VENMO_HANDLE ?? "@evrybites",
               amount: `$${Number(existing.totalAmount).toFixed(2)}`,
             }
           : null;
