@@ -46,26 +46,37 @@ model Product {
 }
 
 model Order {
-  id              String          @id @default(uuid())
-  firstName       String?
-  lastName        String?
-  customerEmail   String
-  customerPhone   String
-  fulfillmentType FulfillmentType
-  addressLine1    String?
-  city            String?
-  state           String?
-  zip             String?
-  paymentMethod   PaymentMethod
-  notes           String?
-  status          OrderStatus     @default(received)
-  totalAmount     Decimal         @db.Decimal(10, 2)
-  paypalOrderId   String?
-  paypalCaptureId String?
-  paypalInvoiceId String?
-  cashCollected   Decimal?        @db.Decimal(10, 2)
-  createdAt       DateTime        @default(now())
-  orderItems      OrderItem[]
+  id                    String                 @id @default(uuid())
+  firstName             String?
+  lastName              String?
+  customerEmail         String
+  customerPhone         String
+  fulfillmentType       FulfillmentType
+  addressLine1          String?
+  city                  String?
+  state                 String?
+  zip                   String?
+  paymentMethod         PaymentMethod
+  notes                 String?
+  status                OrderStatus            @default(received)
+  totalAmount           Decimal                @db.Decimal(10, 2)
+  paypalOrderId         String?
+  paypalCaptureId       String?
+  paypalInvoiceId       String?
+  cashCollected         Decimal?               @db.Decimal(10, 2)
+  createdAt             DateTime               @default(now())
+  orderItems            OrderItem[]
+  customPaymentRequests CustomPaymentRequest[]
+}
+
+model CustomPaymentRequest {
+  id            String   @id @default(cuid())
+  orderId       String
+  order         Order    @relation(fields: [orderId], references: [id])
+  amount        Decimal  @db.Decimal(10, 2)
+  paypalOrderId String?
+  paid          Boolean  @default(false)
+  createdAt     DateTime @default(now())
 }
 
 model OrderItem {

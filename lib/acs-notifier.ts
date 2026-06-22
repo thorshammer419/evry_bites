@@ -109,6 +109,10 @@ export class AcsNotifier implements Notifier {
       await this.sendVenmoPaymentRequest(event.order, connectionString);
     } else if (event.type === "order.paypal_payment_requested") {
       await this.sendPaypalPaymentRequest(event.order, event.paymentUrl, connectionString);
+    } else if (event.type === "order.custom_payment_requested") {
+      await this.sendCustomPaymentRequest(event.order, event.amount, event.paymentUrl, connectionString);
+    } else if (event.type === "order.custom_payment_received") {
+      await this.sendCustomPaymentReceived(event.order, event.amount, connectionString);
     } else if (event.type === "user.cash_check_requested") {
       await this.sendCashCheckRequest(event.request, connectionString);
     } else {
@@ -381,6 +385,107 @@ export class AcsNotifier implements Notifier {
         console.error("[notifications] paypal-payment-request poll failed:", err)
       );
     }
+  }
+
+  private async sendCustomPaymentRequest(
+    order: import("./notifier").OrderForNotification,
+    amount: number,
+    paymentUrl: string,
+    connectionString: string
+  ): Promise<void> {
+    const fromEmail = process.env.ACS_FROM_EMAIL;
+    if (!fromEmail) return;
+
+    const ref = order.id.slice(0, 8).toUpperCase();
+    const name = customerName(order);
+
+    const subject = `EvryBites — Payment Request for $${amount.toFixed(2)}`;
+    const body = [
+      `Hi ${name},`,
+      "",
+      `EvryBites has sent you a payment request of $${amount.toFixed(2)} related to order #${ref}.`,
+      "",
+      `Pay now: ${paymentUrl}`,
+      "",
+      "Tap the link above to complete your payment securely via PayPal or credit/debit card.",
+      "",
+      "Thank you for your business!",
+    ].join("\n");
+
+    const { EmailClient } = await import("@azure/communication-email");
+    const result = await new EmailClient(connectionString).beginSend({
+      senderAddress: fromEmail,
+      recipients: { to: [{ address: order.customerEmail }] },
+      content: { subject, plainText: body },
+    }).catch((err: unknown) => {
+      console.error("[notifications] custom-payment-request email failed:", err);
+    });
+
+    if (result && "pollUntilDone" in result) {
+      result.pollUntilDone().catch((err: unknown) =>
+        console.error("[notifications] custom-payment-request poll failed:", err)
+      );
+    }
+  }
+
+  private async sendCustomPaymentReceived(
+    order: import("./notifier").OrderForNotification,
+    amount: number,
+    connectionString: string
+  ): Promise<void> {
+    const fromEmail = process.env.ACS_FROM_EMAIL;
+    const ownerEmails = (process.env.OWNER_NOTIFICATION_EMAIL ?? "")
+      .split(",")
+      .map((e) => e.trim())
+      .filter(Boolean);
+    if (!fromEmail) return;
+
+    const ref = order.id.slice(0, 8).toUpperCase();
+    const name = customerName(order);
+
+    const customerSubject = `EvryBites — Payment of $${amount.toFixed(2)} Received`;
+    const customerBody = [
+      `Hi ${name},`,
+      "",
+      `Thank you! We've received your payment of $${amount.toFixed(2)} for order #${ref}.`,
+      "",
+      "Your payment has been recorded. We'll be in touch if anything else is needed.",
+      "",
+      "Thank you for supporting EvryBites!",
+    ].join("\n");
+
+    const ownerSubject = `EvryBites — Custom Payment of $${amount.toFixed(2)} Received for Order #${ref}`;
+    const ownerBody = [
+      `Custom payment received!`,
+      "",
+      `Order #${ref}`,
+      `Customer: ${name} (${order.customerEmail})`,
+      `Amount paid: $${amount.toFixed(2)}`,
+      "",
+      "Order status has NOT been automatically updated. Manually advance the status when ready.",
+    ].join("\n");
+
+    const { EmailClient } = await import("@azure/communication-email");
+    const results = await Promise.allSettled([
+      new EmailClient(connectionString).beginSend({
+        senderAddress: fromEmail,
+        recipients: { to: [{ address: order.customerEmail }] },
+        content: { subject: customerSubject, plainText: customerBody },
+      }),
+      ownerEmails.length > 0
+        ? new EmailClient(connectionString).beginSend({
+            senderAddress: fromEmail,
+            recipients: { to: ownerEmails.map((address) => ({ address })) },
+            content: { subject: ownerSubject, plainText: ownerBody },
+          })
+        : Promise.resolve(),
+    ]);
+
+    results.forEach((r, i) => {
+      if (r.status === "rejected") {
+        console.error(`[notifications] custom-payment-received channel ${i} failed:`, r.reason);
+      }
+    });
   }
 
   private async sendStatusChanged(

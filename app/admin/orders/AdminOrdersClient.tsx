@@ -391,6 +391,47 @@ function ChangePaymentModal({ currentMethod, onConfirm, onClose, isPending }: {
   );
 }
 
+function SendCustomPaymentModal({ orderTotal, onConfirm, onClose, isPending }: {
+  orderTotal: number;
+  onConfirm: (amount: number) => void;
+  onClose: () => void;
+  isPending: boolean;
+}) {
+  const [rawAmount, setRawAmount] = useState(orderTotal.toFixed(2));
+  const parsed = parseFloat(rawAmount);
+  const valid = !isNaN(parsed) && parsed > 0;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5">
+        <h2 className="text-lg font-bold text-blue-900 mb-1">Send Custom Payment Link</h2>
+        <p className="text-sm text-blue-700 mb-4">
+          Enter the amount to request. The customer will receive an email with a link to pay via PayPal. The order status will <span className="font-semibold">not</span> change automatically when paid.
+        </p>
+        <label className="block text-sm font-medium text-blue-900 mb-1">Amount ($)</label>
+        <input
+          type="number"
+          min="0.01"
+          step="0.01"
+          value={rawAmount}
+          onChange={(e) => setRawAmount(e.target.value)}
+          className="w-full border border-sky-200 rounded-xl px-3 py-2 text-sm text-blue-900 mb-4 focus:outline-none focus:ring-2 focus:ring-blue-300"
+        />
+        <div className="flex gap-2">
+          <button onClick={onClose} disabled={isPending}
+            className="flex-1 border border-sky-200 text-blue-800 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-sky-50 transition-colors disabled:opacity-60">
+            Cancel
+          </button>
+          <button onClick={() => valid && onConfirm(parsed)} disabled={isPending || !valid}
+            className="flex-1 bg-blue-900 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-blue-800 transition-colors disabled:opacity-60">
+            {isPending ? "Sending..." : "Send Link"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Order Row ───────────────────────────────────────────────────────────────
 
 function OrderRow({ order }: { order: OrderWithItems }) {
@@ -400,6 +441,8 @@ function OrderRow({ order }: { order: OrderWithItems }) {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showManualModal, setShowManualModal] = useState(false);
   const [showLogCashModal, setShowLogCashModal] = useState(false);
+  const [showCustomPaymentModal, setShowCustomPaymentModal] = useState(false);
+  const [customPaymentSent, setCustomPaymentSent] = useState(false);
   const [venmoReminder, setVenmoReminder] = useState<{ handle: string; amount: string; isRefund: boolean } | null>(null);
   const utils = trpc.useUtils();
 
@@ -427,6 +470,10 @@ function OrderRow({ order }: { order: OrderWithItems }) {
     onSuccess: () => { utils.orders.listAll.invalidate(); setShowLogCashModal(false); },
   });
 
+  const sendCustomPayment = trpc.orders.sendCustomPaymentLink.useMutation({
+    onSuccess: () => { setShowCustomPaymentModal(false); setCustomPaymentSent(true); },
+  });
+
   const total = Number(order.totalAmount);
   const collected = order.cashCollected !== null && order.cashCollected !== undefined
     ? Number(order.cashCollected)
@@ -440,7 +487,7 @@ function OrderRow({ order }: { order: OrderWithItems }) {
   const next = nextStatus(order);
   const prev = previousStatus(order);
   const ref = order.id.slice(0, 8).toUpperCase();
-  const isMutating = updateStatus.isPending || cancelOrder.isPending || changePayment.isPending || adminSetStatus.isPending || logCash.isPending;
+  const isMutating = updateStatus.isPending || cancelOrder.isPending || changePayment.isPending || adminSetStatus.isPending || logCash.isPending || sendCustomPayment.isPending;
 
   const date = new Date(order.createdAt).toLocaleDateString("en-US", {
     month: "short", day: "numeric", year: "numeric",
@@ -571,6 +618,15 @@ function OrderRow({ order }: { order: OrderWithItems }) {
                 Change Payment Method
               </button>
             )}
+            {order.status === "pending_payment" && (
+              <button
+                onClick={() => setShowCustomPaymentModal(true)}
+                disabled={isMutating}
+                className="w-full border border-violet-300 text-violet-700 px-4 py-2.5 rounded-xl font-semibold text-sm hover:bg-violet-50 transition-colors disabled:opacity-60"
+              >
+                {customPaymentSent ? "Send Another Custom Payment Link" : "Send Custom Payment Link"}
+              </button>
+            )}
             <button
               onClick={() => setShowManualModal(true)}
               disabled={isMutating}
@@ -635,6 +691,15 @@ function OrderRow({ order }: { order: OrderWithItems }) {
           isPending={logCash.isPending}
           onClose={() => setShowLogCashModal(false)}
           onConfirm={(amount) => logCash.mutate({ id: order.id, amount })}
+        />
+      )}
+
+      {showCustomPaymentModal && (
+        <SendCustomPaymentModal
+          orderTotal={total}
+          isPending={sendCustomPayment.isPending}
+          onClose={() => setShowCustomPaymentModal(false)}
+          onConfirm={(amount) => sendCustomPayment.mutate({ orderId: order.id, amount })}
         />
       )}
 

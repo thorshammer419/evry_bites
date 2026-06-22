@@ -36,6 +36,8 @@ export type OrderEvent =
   | { type: "order.cancelled"; order: OrderForNotification; reason?: string }
   | { type: "order.venmo_payment_requested"; order: OrderForNotification & { totalAmount: unknown } }
   | { type: "order.paypal_payment_requested"; order: OrderForNotification & { totalAmount: unknown }; paymentUrl: string }
+  | { type: "order.custom_payment_requested"; order: OrderForNotification; amount: number; paymentUrl: string }
+  | { type: "order.custom_payment_received"; order: OrderForNotification; amount: number }
   | { type: "user.cash_check_requested"; request: CashCheckRequestForNotification };
 
 export interface Notifier {

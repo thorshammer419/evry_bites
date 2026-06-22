@@ -604,6 +604,107 @@ export const ordersRouter = router({
       return updated;
     }),
 
+  sendCustomPaymentLink: publicProcedure
+    .input(z.object({
+      orderId: z.string(),
+      amount: z.number().positive(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const order = await db.order.findUnique({
+        where: { id: input.orderId },
+      });
+      if (!order) throw new TRPCError({ code: "NOT_FOUND", message: "Order not found" });
+
+      const request = await db.customPaymentRequest.create({
+        data: {
+          orderId: input.orderId,
+          amount: input.amount,
+        },
+      });
+
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://evrybites.com";
+      const paymentUrl = `${baseUrl}/order/pay/custom/${request.id}`;
+
+      ctx.notifier
+        .notify({ type: "order.custom_payment_requested", order, amount: input.amount, paymentUrl })
+        .catch((err) => console.error("[orders] custom-payment-link notification failed:", err));
+
+      return { requestId: request.id };
+    }),
+
+  createPaypalOrderForCustomPayment: publicProcedure
+    .input(z.object({ requestId: z.string() }))
+    .mutation(async ({ input }) => {
+      const request = await db.customPaymentRequest.findUnique({
+        where: { id: input.requestId },
+      });
+      if (!request) throw new TRPCError({ code: "NOT_FOUND", message: "Payment request not found" });
+      if (request.paid) throw new TRPCError({ code: "BAD_REQUEST", message: "Already paid" });
+
+      const token = await getPaypalAccessToken();
+      const mode = process.env.PAYPAL_MODE ?? "sandbox";
+      const paypalBase = mode === "live" ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com";
+      const amount = Number(request.amount).toFixed(2);
+
+      const res = await fetch(`${paypalBase}/v2/checkout/orders`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          intent: "CAPTURE",
+          purchase_units: [{ amount: { currency_code: "USD", value: amount } }],
+        }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `PayPal error: ${text}` });
+      }
+      const data = await res.json() as { id: string };
+
+      await db.customPaymentRequest.update({
+        where: { id: input.requestId },
+        data: { paypalOrderId: data.id },
+      });
+
+      return { paypalOrderId: data.id };
+    }),
+
+  captureCustomPayment: publicProcedure
+    .input(z.object({ requestId: z.string(), paypalOrderId: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const request = await db.customPaymentRequest.findUnique({
+        where: { id: input.requestId },
+        include: { order: true },
+      });
+      if (!request) throw new TRPCError({ code: "NOT_FOUND", message: "Payment request not found" });
+      if (request.paid) throw new TRPCError({ code: "BAD_REQUEST", message: "Already paid" });
+
+      const token = await getPaypalAccessToken();
+      const mode = process.env.PAYPAL_MODE ?? "sandbox";
+      const paypalBase = mode === "live" ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com";
+
+      const res = await fetch(`${paypalBase}/v2/checkout/orders/${input.paypalOrderId}/capture`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `PayPal capture error: ${text}` });
+      }
+
+      const updated = await db.customPaymentRequest.update({
+        where: { id: input.requestId },
+        data: { paid: true },
+        include: { order: true },
+      });
+
+      ctx.notifier
+        .notify({ type: "order.custom_payment_received", order: updated.order, amount: Number(updated.amount) })
+        .catch((err) => console.error("[orders] custom-payment-received notification failed:", err));
+
+      return { success: true };
+    }),
+
   requestCashCheckApproval: publicProcedure
     .input(z.object({
       userId: z.string(),
