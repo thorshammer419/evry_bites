@@ -6,6 +6,7 @@ import { isValidTransition, REFUND_STATUSES } from "../../lib/order-lifecycle";
 
 const INCLUDE_FULL = {
   orderItems: { include: { product: true } },
+  customPaymentRequests: true,
 } as const;
 
 const orderFieldsSchema = z.object({
@@ -541,7 +542,7 @@ export const ordersRouter = router({
       const venmoReminder =
         existing.paymentMethod === "venmo"
           ? {
-              handle: process.env.NEXT_PUBLIC_VENMO_HANDLE ?? "@evrybites",
+              handle: process.env.VENMO_HANDLE ?? "@evrybites",
               amount: `$${Number(existing.totalAmount).toFixed(2)}`,
             }
           : null;
@@ -754,7 +755,7 @@ export const ordersRouter = router({
 
       if (order.paymentMethod === "venmo") {
         // Venmo: send a deep-link email; no CustomPaymentRequest record needed
-        const venmoHandle = process.env.NEXT_PUBLIC_VENMO_HANDLE ?? "@evrybites";
+        const venmoHandle = process.env.VENMO_HANDLE ?? "@evrybites";
         const note = encodeURIComponent(`Order #${order.id.slice(0, 8).toUpperCase()}`);
         const venmoUrl = `https://venmo.com/${venmoHandle.replace("@", "")}?txn=pay&amount=${input.amount.toFixed(2)}&note=${note}`;
         ctx.notifier

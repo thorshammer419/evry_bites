@@ -29,6 +29,12 @@ type OrderWithItems = {
     subtotal: unknown;
     product: { name: string; unitLabel: string };
   }[];
+  customPaymentRequests: {
+    id: string;
+    amount: unknown;
+    paid: boolean;
+    createdAt: Date;
+  }[];
 };
 
 const STATUS_LABELS: Record<OrderStatus, string> = {
@@ -486,6 +492,9 @@ function OrderRow({ order }: { order: OrderWithItems }) {
   const isCashOrCheck = order.paymentMethod === "cash" || order.paymentMethod === "check";
   const isFullyCollected = isCashOrCheck && collected !== null && collected >= total;
   const showCashFlag = isCashOrCheck && !isTerminal(order.status) && order.status !== "cancelled" && order.status !== "refunded" && !isFullyCollected;
+  const paidCustomPayments = order.customPaymentRequests.filter((r) => r.paid);
+  const customPaidTotal = paidCustomPayments.reduce((sum, r) => sum + Number(r.amount), 0);
+  const hasPartialCustomPayment = paidCustomPayments.length > 0 && order.status === "pending_payment";
   const isRefundAction = REFUND_STATUSES.includes(order.status);
   const canCancelRefund = order.status !== "cancelled" && order.status !== "refunded";
   const canChangePayment = !["delivered", "cancelled", "refunded"].includes(order.status);
@@ -514,6 +523,11 @@ function OrderRow({ order }: { order: OrderWithItems }) {
             {showCashFlag && (
               <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-amber-100 text-amber-800">
                 {collected !== null ? `Cash: $${collected.toFixed(2)} / $${total.toFixed(2)}` : "Awaiting Cash"}
+              </span>
+            )}
+            {hasPartialCustomPayment && (
+              <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-emerald-100 text-emerald-800">
+                Paid: ${customPaidTotal.toFixed(2)} / ${total.toFixed(2)}
               </span>
             )}
           </div>
@@ -564,6 +578,23 @@ function OrderRow({ order }: { order: OrderWithItems }) {
               <div className="flex justify-between text-sm text-sky-600 mt-1">
                 <span>Cash collected</span>
                 <span>${collected.toFixed(2)}</span>
+              </div>
+            )}
+            {paidCustomPayments.length > 0 && (
+              <div className="mt-2 space-y-1">
+                <p className="text-xs font-semibold text-sky-500 uppercase tracking-wide">Custom Payments Received</p>
+                {paidCustomPayments.map((r) => (
+                  <div key={r.id} className="flex justify-between text-sm text-emerald-700">
+                    <span>{r.createdAt.toLocaleDateString()}</span>
+                    <span>${Number(r.amount).toFixed(2)}</span>
+                  </div>
+                ))}
+                {paidCustomPayments.length > 1 && (
+                  <div className="flex justify-between text-sm font-semibold text-emerald-800 border-t border-sky-100 pt-1">
+                    <span>Total paid</span>
+                    <span>${customPaidTotal.toFixed(2)}</span>
+                  </div>
+                )}
               </div>
             )}
           </div>

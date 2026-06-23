@@ -309,7 +309,7 @@ export class AcsNotifier implements Notifier {
     const ref = order.id.slice(0, 8).toUpperCase();
     const total = Number(order.totalAmount).toFixed(2);
     const name = customerName(order);
-    const venmoHandle = process.env.NEXT_PUBLIC_VENMO_HANDLE ?? "@evrybites";
+    const venmoHandle = process.env.VENMO_HANDLE ?? "@evrybites";
     const note = encodeURIComponent(`Order #${ref}`);
     const venmoLink = `https://venmo.com/${venmoHandle.replace("@", "")}?txn=pay&amount=${total}&note=${note}`;
 
