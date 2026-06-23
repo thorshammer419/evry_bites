@@ -529,9 +529,15 @@ export const ordersRouter = router({
         }
       }
 
+      // Reset collected amounts
+      await db.customPaymentRequest.updateMany({
+        where: { orderId: existing.id },
+        data: { paid: false },
+      });
+
       const order = await db.order.update({
         where: { id: input.id },
-        data: { status: newStatus },
+        data: { status: newStatus, cashCollected: null },
         include: { orderItems: { include: { product: true } } },
       });
 
@@ -616,9 +622,19 @@ export const ordersRouter = router({
       status: z.enum(["pending_payment", "received", "processing", "ready", "shipped", "delivered", "cancelled", "refunded"]),
     }))
     .mutation(async ({ input }) => {
+      const isCancellation = input.status === "cancelled" || input.status === "refunded";
+      if (isCancellation) {
+        await db.customPaymentRequest.updateMany({
+          where: { orderId: input.id },
+          data: { paid: false },
+        });
+      }
       return db.order.update({
         where: { id: input.id },
-        data: { status: input.status },
+        data: {
+          status: input.status,
+          ...(isCancellation ? { cashCollected: null } : {}),
+        },
         include: INCLUDE_FULL,
       });
     }),
