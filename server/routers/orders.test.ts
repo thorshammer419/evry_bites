@@ -92,6 +92,7 @@ const mockOrder: any = {
   status: "received",
   totalAmount: "39.00",
   paypalOrderId: null,
+  paypalCaptureId: null,
   createdAt: new Date(),
   orderItems: [
     {

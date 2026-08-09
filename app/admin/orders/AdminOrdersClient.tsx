@@ -22,6 +22,7 @@ type OrderWithItems = {
   status: OrderStatus;
   totalAmount: Prisma.Decimal;
   cashCollected: Prisma.Decimal | null;
+  paypalCaptureId: string | null;
   createdAt: Date;
   orderItems: {
     id: string;
@@ -505,10 +506,8 @@ function OrderRow({ order }: { order: OrderWithItems }) {
     : null;
   const isCashOrCheck = order.paymentMethod === "cash" || order.paymentMethod === "check";
   const isFullyCollected = isCashOrCheck && collected !== null && collected >= total;
-  const showCashFlag = isCashOrCheck && !isTerminal(order.status) && !isCancelledOrRefunded(order.status) && !isFullyCollected;
   const paidCustomPayments = order.customPaymentRequests.filter((r) => r.paid);
   const customPaidTotal = paidCustomPayments.reduce((sum, r) => sum + Number(r.amount), 0);
-  const hasPartialCustomPayment = paidCustomPayments.length > 0 && order.status === "pending_payment";
   const owedBalance = balanceDue(order);
   const canRequestBalance = owedBalance > 0 && !isCancelledOrRefunded(order.status);
   const isRefundAction = REFUND_STATUSES.includes(order.status);
@@ -536,14 +535,9 @@ function OrderRow({ order }: { order: OrderWithItems }) {
             <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[order.status]}`}>
               {getStatusLabel(order)}
             </span>
-            {showCashFlag && (
+            {canRequestBalance && (
               <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-amber-100 text-amber-800">
-                {collected !== null ? `Cash: $${collected.toFixed(2)} / $${total.toFixed(2)}` : "Awaiting Cash"}
-              </span>
-            )}
-            {hasPartialCustomPayment && (
-              <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-emerald-100 text-emerald-800">
-                Paid: ${customPaidTotal.toFixed(2)} / ${total.toFixed(2)}
+                Balance Due: ${owedBalance.toFixed(2)}
               </span>
             )}
           </div>
@@ -590,19 +584,19 @@ function OrderRow({ order }: { order: OrderWithItems }) {
               <span>Total</span>
               <span>${total.toFixed(2)}</span>
             </div>
-            {isCashOrCheck && collected !== null && (
+            {collected !== null && (
               <div className="flex justify-between text-sm text-sky-600 mt-1">
                 <span>Cash collected</span>
                 <span>${collected.toFixed(2)}</span>
               </div>
             )}
-            {paidCustomPayments.length > 0 && (
+            {order.customPaymentRequests.length > 0 && (
               <div className="mt-2 space-y-1">
-                <p className="text-xs font-semibold text-sky-500 uppercase tracking-wide">Custom Payments Received</p>
-                {paidCustomPayments.map((r) => (
-                  <div key={r.id} className="flex justify-between text-sm text-emerald-700">
-                    <span>{r.createdAt.toLocaleDateString()}</span>
-                    <span>${Number(r.amount).toFixed(2)}</span>
+                <p className="text-xs font-semibold text-sky-500 uppercase tracking-wide">Payment Requests</p>
+                {order.customPaymentRequests.map((r) => (
+                  <div key={r.id} className={`flex justify-between text-sm ${r.paid ? "text-emerald-700" : "text-sky-500"}`}>
+                    <span>{r.channel === "venmo" ? "Venmo" : "PayPal"} · {r.paid ? "Paid" : "Pending"}</span>
+                    <span className={r.paid ? "font-medium" : ""}>${Number(r.amount).toFixed(2)}</span>
                   </div>
                 ))}
                 {paidCustomPayments.length > 1 && (

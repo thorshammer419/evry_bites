@@ -4,13 +4,15 @@ import { balanceDue } from "./payments";
 function order({
   totalAmount,
   cashCollected = null,
+  paypalCaptureId = null,
   customPaymentRequests = [],
 }: {
   totalAmount: number | string;
   cashCollected?: number | string | null;
+  paypalCaptureId?: string | null;
   customPaymentRequests?: { amount: number | string; paid: boolean }[];
 }) {
-  return { totalAmount, cashCollected, customPaymentRequests };
+  return { totalAmount, cashCollected, paypalCaptureId, customPaymentRequests };
 }
 
 describe("balanceDue", () => {
@@ -73,6 +75,25 @@ describe("balanceDue", () => {
         totalAmount: 50,
         cashCollected: 30,
         customPaymentRequests: [{ amount: 30, paid: true }],
+      })
+    );
+    expect(result).toBe(0);
+  });
+
+  it("is zero when the primary PayPal/Venmo checkout already captured the full total", () => {
+    // Every code path that sets paypalCaptureId captures the order's full
+    // total, so no cash or custom-payment tracking is relevant once it's set.
+    const result = balanceDue(order({ totalAmount: 50, paypalCaptureId: "CAPTURE-1" }));
+    expect(result).toBe(0);
+  });
+
+  it("ignores cash/custom-payment fields once paypalCaptureId is set", () => {
+    const result = balanceDue(
+      order({
+        totalAmount: 50,
+        paypalCaptureId: "CAPTURE-1",
+        cashCollected: 0,
+        customPaymentRequests: [{ amount: 10, paid: false }],
       })
     );
     expect(result).toBe(0);
