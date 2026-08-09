@@ -63,3 +63,11 @@ A request for part (or all) of an Order's Balance Due through a specific channel
 ## Balance Due
 
 An Order's total minus its Cash Collected minus its paid Custom Payment Requests. Drives whether the owner can request more payment and what amount that request defaults to. Clamped at zero — never shown or tracked as negative.
+
+## Admin Session
+
+Access to `/admin/*`. There is no per-person admin account — a single shared password, plus a Verification Code texted to a phone number checked against a fixed allowlist, together grant one shared session. Distinct from a Customer's account (Clerk-based, used only on the customer-facing order flow).
+
+## Verification Code
+
+A 6-digit, single-use, time-limited code sent by SMS to a phone number the owner typed in after the shared password succeeded — the second factor of an Admin Session. Expires after 10 minutes or 5 wrong attempts, whichever comes first; a fresh one can be requested no more than once per minute per phone number. Never tied to a stored identity — the phone number is checked against the allowlist at request time, not stored as "who logged in."
