@@ -597,10 +597,10 @@ export const ordersRouter = router({
         include: INCLUDE_FULL,
       });
 
-      if (existing.status === "delivered" || existing.status === "cancelled") {
+      if (existing.status === "delivered" || isCancelledOrRefunded(existing.status)) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: "Cannot change payment method on a delivered or cancelled order.",
+          message: "Cannot change payment method on a delivered, cancelled, or refunded order.",
         });
       }
 
@@ -611,8 +611,19 @@ export const ordersRouter = router({
         });
       }
 
-      // If switching away from a paid PayPal checkout order, refund first
-      if (existing.paymentMethod === "paypal" && existing.paypalCaptureId) {
+      const hasCashCollected = existing.cashCollected !== null && Number(existing.cashCollected) > 0;
+      const hasPaidCustomPayment = existing.customPaymentRequests.some((r) => r.paid);
+      if (hasCashCollected || hasPaidCustomPayment) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Cannot change payment method once a payment has been collected — request the remaining balance instead.",
+        });
+      }
+
+      // If switching away from a captured PayPal/Venmo checkout, refund first.
+      // paypalCaptureId is the reliable signal here, not paymentMethod — a
+      // PayPal-captured checkout can be detected and recorded as "venmo".
+      if (existing.paypalCaptureId) {
         await refundPaypalCapture(existing.paypalCaptureId);
       }
 

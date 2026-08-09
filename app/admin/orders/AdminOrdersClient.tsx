@@ -516,7 +516,8 @@ function OrderRow({ order }: { order: OrderWithItems }) {
   const canRequestBalance = owedBalance > 0 && !isCancelledOrRefunded(order.status);
   const isRefundAction = REFUND_STATUSES.includes(order.status);
   const canCancelRefund = !isCancelledOrRefunded(order.status);
-  const canChangePayment = !["delivered", "cancelled", "refunded"].includes(order.status);
+  const hasCollectedPayment = (collected !== null && collected > 0) || paidCustomPayments.length > 0;
+  const canChangePayment = order.status !== "delivered" && !isCancelledOrRefunded(order.status) && !hasCollectedPayment;
   const next = nextStatus(order);
   const prev = previousStatus(order);
   const ref = order.id.slice(0, 8).toUpperCase();

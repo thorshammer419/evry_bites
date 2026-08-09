@@ -681,3 +681,128 @@ describe("orders.markCustomPaymentReceived", () => {
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 });
+
+describe("orders.changePaymentMethod", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal("fetch", vi.fn(async (url: string) =>
+      String(url).includes("/oauth2/token")
+        ? { ok: true, json: async () => ({ access_token: "test-token" }) }
+        : { ok: true, json: async () => ({}) }
+    ));
+  });
+
+  function orderWith(overrides: Partial<typeof mockOrder> & { customPaymentRequests?: { paid: boolean }[] }) {
+    return {
+      ...mockOrder,
+      cashCollected: null,
+      customPaymentRequests: [],
+      paypalCaptureId: null,
+      ...overrides,
+    };
+  }
+
+  it("rejects when cash has been collected", async () => {
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(
+      orderWith({ paymentMethod: "cash", status: "received", cashCollected: "20.00" })
+    );
+
+    await expect(
+      caller.orders.changePaymentMethod({ id: "order-123", newPaymentMethod: "venmo" })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    expect(db.order.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects when a custom payment request has been paid", async () => {
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(
+      orderWith({
+        paymentMethod: "cash",
+        status: "received",
+        customPaymentRequests: [{ paid: true, amount: "10.00" }],
+      })
+    );
+
+    await expect(
+      caller.orders.changePaymentMethod({ id: "order-123", newPaymentMethod: "venmo" })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    expect(db.order.update).not.toHaveBeenCalled();
+  });
+
+  it("allows switching when nothing has been collected (unchanged allowed path)", async () => {
+    const existing = orderWith({ paymentMethod: "cash", status: "received" });
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(existing);
+    vi.mocked(db.order.update).mockResolvedValue({ ...existing, paymentMethod: "venmo", status: "pending_payment" });
+
+    await caller.orders.changePaymentMethod({ id: "order-123", newPaymentMethod: "venmo" });
+
+    expect(db.order.update).toHaveBeenCalledWith({
+      where: { id: "order-123" },
+      data: {
+        paymentMethod: "venmo",
+        status: "pending_payment",
+        paypalCaptureId: null,
+        paypalInvoiceId: null,
+        paypalOrderId: null,
+      },
+      include: expect.anything(),
+    });
+    expect(mockNotify).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "order.venmo_payment_requested" })
+    );
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("refunds the paypal capture before switching away from a paid PayPal checkout", async () => {
+    const existing = orderWith({ paymentMethod: "paypal", status: "pending_payment", paypalCaptureId: "CAP-1" });
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(existing);
+    vi.mocked(db.order.update).mockResolvedValue({ ...existing, paymentMethod: "cash", status: "pending_payment" });
+
+    await caller.orders.changePaymentMethod({ id: "order-123", newPaymentMethod: "cash" });
+
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/v2/payments/captures/CAP-1/refund"),
+      expect.anything()
+    );
+  });
+
+  it("refunds the paypal capture even when the order is recorded as venmo (PayPal-detected-as-Venmo checkout)", async () => {
+    // A checkout captured through the PayPal API can be detected as a Venmo
+    // payment (payment_source.venmo) and recorded with paymentMethod "venmo"
+    // while still holding a real PayPal capture — that capture must still be
+    // refunded before switching away, regardless of the recorded label.
+    const existing = orderWith({ paymentMethod: "venmo", status: "pending_payment", paypalCaptureId: "CAP-2" });
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(existing);
+    vi.mocked(db.order.update).mockResolvedValue({ ...existing, paymentMethod: "cash", status: "pending_payment" });
+
+    await caller.orders.changePaymentMethod({ id: "order-123", newPaymentMethod: "cash" });
+
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/v2/payments/captures/CAP-2/refund"),
+      expect.anything()
+    );
+  });
+
+  it("rejects on a delivered order", async () => {
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(
+      orderWith({ paymentMethod: "cash", status: "delivered" })
+    );
+
+    await expect(
+      caller.orders.changePaymentMethod({ id: "order-123", newPaymentMethod: "venmo" })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("rejects on a refunded order", async () => {
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(
+      orderWith({ paymentMethod: "cash", status: "refunded" })
+    );
+
+    await expect(
+      caller.orders.changePaymentMethod({ id: "order-123", newPaymentMethod: "venmo" })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    expect(db.order.update).not.toHaveBeenCalled();
+  });
+});
