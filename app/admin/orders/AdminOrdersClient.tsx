@@ -156,18 +156,45 @@ function CancelRefundModal({
   );
 }
 
-function VenmoReminderModal({ handle, amount, isRefund, onClose }: {
-  handle: string; amount: string; isRefund: boolean; onClose: () => void;
+type AutoRefundedItem = { channel: "paypal"; amount: number };
+type ManualReturnItem = { channel: "cash" | "venmo" | "paypal"; amount: number; detail?: string };
+
+function CancellationSummaryModal({ isRefund, autoRefunded, manualReturn, onClose }: {
+  isRefund: boolean;
+  autoRefunded: AutoRefundedItem[];
+  manualReturn: ManualReturnItem[];
+  onClose: () => void;
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5">
-        <h2 className="text-lg font-bold text-blue-900 mb-1">Order {isRefund ? "Refunded" : "Cancelled"}</h2>
-        <p className="text-sm text-blue-700 mb-3">Remember to send the customer a refund on Venmo:</p>
-        <div className="bg-sky-50 rounded-xl p-4 text-center mb-4">
-          <p className="text-2xl font-bold text-blue-900">{amount}</p>
-          <p className="text-sm text-blue-700 mt-1">to <span className="font-semibold">{handle}</span></p>
-        </div>
+        <h2 className="text-lg font-bold text-blue-900 mb-3">Order {isRefund ? "Refunded" : "Cancelled"}</h2>
+        {autoRefunded.length > 0 && (
+          <div className="mb-3">
+            <p className="text-xs font-semibold text-emerald-800 uppercase tracking-wide mb-1">Refunded automatically</p>
+            <div className="bg-emerald-50 rounded-xl p-3 space-y-1">
+              {autoRefunded.map((item, i) => (
+                <div key={i} className="flex justify-between text-sm text-emerald-800">
+                  <span>PayPal</span>
+                  <span className="font-semibold">${item.amount.toFixed(2)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {manualReturn.length > 0 && (
+          <div className="mb-4">
+            <p className="text-xs font-semibold text-amber-800 uppercase tracking-wide mb-1">Return manually</p>
+            <div className="bg-amber-50 rounded-xl p-3 space-y-1">
+              {manualReturn.map((item, i) => (
+                <div key={i} className="flex justify-between text-sm text-amber-800">
+                  <span>{PAYMENT_LABELS[item.channel]}{item.detail ? ` (${item.detail})` : ""}</span>
+                  <span className="font-semibold">${item.amount.toFixed(2)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         <button onClick={onClose}
           className="w-full bg-blue-900 text-white px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-blue-800 transition-colors">
           Got it
@@ -469,7 +496,11 @@ function OrderRow({ order }: { order: OrderWithItems }) {
   const [showLogCashModal, setShowLogCashModal] = useState(false);
   const [showCustomPaymentModal, setShowCustomPaymentModal] = useState(false);
   const [customPaymentSent, setCustomPaymentSent] = useState(false);
-  const [venmoReminder, setVenmoReminder] = useState<{ handle: string; amount: string; isRefund: boolean } | null>(null);
+  const [cancellationSummary, setCancellationSummary] = useState<{
+    isRefund: boolean;
+    autoRefunded: AutoRefundedItem[];
+    manualReturn: ManualReturnItem[];
+  } | null>(null);
   const utils = trpc.useUtils();
 
   const updateStatus = trpc.orders.updateStatus.useMutation({
@@ -480,7 +511,9 @@ function OrderRow({ order }: { order: OrderWithItems }) {
     onSuccess: (data) => {
       utils.orders.listAll.invalidate();
       setShowCancelModal(false);
-      if (data.venmoReminder) setVenmoReminder({ ...data.venmoReminder, isRefund: data.isRefund });
+      if (data.autoRefunded.length > 0 || data.manualReturn.length > 0) {
+        setCancellationSummary({ isRefund: data.isRefund, autoRefunded: data.autoRefunded, manualReturn: data.manualReturn });
+      }
     },
   });
 
@@ -765,12 +798,12 @@ function OrderRow({ order }: { order: OrderWithItems }) {
         />
       )}
 
-      {venmoReminder && (
-        <VenmoReminderModal
-          handle={venmoReminder.handle}
-          amount={venmoReminder.amount}
-          isRefund={venmoReminder.isRefund}
-          onClose={() => setVenmoReminder(null)}
+      {cancellationSummary && (
+        <CancellationSummaryModal
+          isRefund={cancellationSummary.isRefund}
+          autoRefunded={cancellationSummary.autoRefunded}
+          manualReturn={cancellationSummary.manualReturn}
+          onClose={() => setCancellationSummary(null)}
         />
       )}
 

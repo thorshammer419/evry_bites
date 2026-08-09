@@ -530,7 +530,10 @@ export const ordersRouter = router({
   cancelOrder: publicProcedure
     .input(z.object({ id: z.string(), reason: z.string().optional() }))
     .mutation(async ({ input, ctx }) => {
-      const existing = await db.order.findUniqueOrThrow({ where: { id: input.id } });
+      const existing = await db.order.findUniqueOrThrow({
+        where: { id: input.id },
+        include: INCLUDE_FULL,
+      });
 
       if (isCancelledOrRefunded(existing.status)) {
         throw new TRPCError({
@@ -542,21 +545,46 @@ export const ordersRouter = router({
       const isRefund = REFUND_STATUSES.includes(existing.status);
       const newStatus = isRefund ? "refunded" : "cancelled";
 
+      // Captured from pre-cancellation state, before the resets below —
+      // what got refunded automatically vs. what still needs manual return.
+      const autoRefunded: { channel: "paypal"; amount: number }[] = [];
+      const manualReturn: { channel: "cash" | "venmo" | "paypal"; amount: number; detail?: string }[] = [];
+
       // Refund main PayPal checkout capture if present
       if (existing.paypalCaptureId) {
         await refundPaypalCapture(existing.paypalCaptureId);
+        autoRefunded.push({ channel: "paypal", amount: Number(existing.totalAmount) });
       }
 
-      // Refund any paid custom payment link captures
-      const paidCustomCaptures = await db.customPaymentRequest.findMany({
-        where: { orderId: existing.id, paid: true, paypalCaptureId: { not: null } },
-      });
-      for (const cp of paidCustomCaptures) {
-        if (cp.paypalCaptureId) {
-          await refundPaypalCapture(cp.paypalCaptureId).catch((err) =>
-            console.error(`[orders] failed to refund custom payment ${cp.id}:`, err)
-          );
+      // Paid custom payment requests: PayPal ones get an API refund attempt —
+      // on failure it falls back to manual return rather than being
+      // misreported as refunded. Venmo ones have no refund API at all and
+      // always need to be returned to the customer manually.
+      const paidCustomPayments = existing.customPaymentRequests.filter((cp) => cp.paid);
+      for (const cp of paidCustomPayments) {
+        if (cp.channel === "paypal" && cp.paypalCaptureId) {
+          const refunded = await refundPaypalCapture(cp.paypalCaptureId)
+            .then(() => true)
+            .catch((err) => {
+              console.error(`[orders] failed to refund custom payment ${cp.id}:`, err);
+              return false;
+            });
+          if (refunded) {
+            autoRefunded.push({ channel: "paypal", amount: Number(cp.amount) });
+          } else {
+            manualReturn.push({ channel: "paypal", amount: Number(cp.amount) });
+          }
+        } else if (cp.channel === "venmo") {
+          manualReturn.push({
+            channel: "venmo",
+            amount: Number(cp.amount),
+            detail: process.env.VENMO_HANDLE ?? "@evrybites",
+          });
         }
+      }
+
+      if (existing.cashCollected !== null && Number(existing.cashCollected) > 0) {
+        manualReturn.push({ channel: "cash", amount: Number(existing.cashCollected) });
       }
 
       // Reset collected amounts
@@ -575,15 +603,7 @@ export const ordersRouter = router({
         .notify({ type: "order.cancelled", order, reason: input.reason })
         .catch((err) => console.error("[orders] cancel notification failed:", err));
 
-      const venmoReminder =
-        existing.paymentMethod === "venmo"
-          ? {
-              handle: process.env.VENMO_HANDLE ?? "@evrybites",
-              amount: `$${Number(existing.totalAmount).toFixed(2)}`,
-            }
-          : null;
-
-      return { order, venmoReminder, isRefund };
+      return { order, isRefund, autoRefunded, manualReturn };
     }),
 
   changePaymentMethod: publicProcedure

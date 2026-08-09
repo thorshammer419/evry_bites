@@ -21,6 +21,7 @@ vi.mock("../../lib/db", () => ({
       create: vi.fn(),
       findUnique: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     },
   },
 }));
@@ -804,5 +805,145 @@ describe("orders.changePaymentMethod", () => {
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
 
     expect(db.order.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("orders.cancelOrder", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal("fetch", vi.fn(async (url: string) =>
+      String(url).includes("/oauth2/token")
+        ? { ok: true, json: async () => ({ access_token: "test-token" }) }
+        : { ok: true, json: async () => ({}) }
+    ));
+  });
+
+  function cancelableOrder(overrides: Partial<typeof mockOrder> & {
+    customPaymentRequests?: { id: string; amount: string; channel: "paypal" | "venmo"; paypalCaptureId: string | null; paid: boolean }[];
+  }) {
+    return {
+      ...mockOrder,
+      status: "received",
+      totalAmount: "60.00",
+      cashCollected: null,
+      paypalCaptureId: null,
+      customPaymentRequests: [],
+      ...overrides,
+    };
+  }
+
+  it("splits a mix of paid PayPal, paid Venmo, and cash into autoRefunded vs manualReturn", async () => {
+    const existing = cancelableOrder({
+      cashCollected: "20.00",
+      customPaymentRequests: [
+        { id: "cp-paypal", amount: "15.00", channel: "paypal", paypalCaptureId: "CAP-CP-1", paid: true },
+        { id: "cp-venmo", amount: "10.00", channel: "venmo", paypalCaptureId: null, paid: true },
+        { id: "cp-pending", amount: "5.00", channel: "paypal", paypalCaptureId: null, paid: false },
+      ],
+    });
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(existing);
+    vi.mocked(db.order.update).mockResolvedValue({ ...existing, status: "cancelled", cashCollected: null });
+
+    const result = await caller.orders.cancelOrder({ id: "order-123" });
+
+    expect(result.autoRefunded).toEqual([{ channel: "paypal", amount: 15 }]);
+    expect(result.manualReturn).toEqual(
+      expect.arrayContaining([
+        { channel: "venmo", amount: 10, detail: expect.any(String) },
+        { channel: "cash", amount: 20 },
+      ])
+    );
+    expect(result.manualReturn).toHaveLength(2);
+    expect(result.isRefund).toBe(false);
+  });
+
+  it("moves a custom PayPal payment to manualReturn when its refund attempt fails, instead of reporting it as auto-refunded", async () => {
+    vi.mocked(fetch).mockImplementation(async (url: unknown) => {
+      const s = String(url);
+      if (s.includes("/oauth2/token")) return { ok: true, json: async () => ({ access_token: "test-token" }) } as never;
+      if (s.includes("/CAP-FAIL/refund")) return { ok: false, text: async () => "capture already refunded" } as never;
+      return { ok: true, json: async () => ({}) } as never;
+    });
+    const existing = cancelableOrder({
+      customPaymentRequests: [
+        { id: "cp-fail", amount: "12.00", channel: "paypal", paypalCaptureId: "CAP-FAIL", paid: true },
+      ],
+    });
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(existing);
+    vi.mocked(db.order.update).mockResolvedValue({ ...existing, status: "cancelled" });
+
+    const result = await caller.orders.cancelOrder({ id: "order-123" });
+
+    expect(result.autoRefunded).toEqual([]);
+    expect(result.manualReturn).toEqual([{ channel: "paypal", amount: 12 }]);
+  });
+
+  it("auto-refunds the main PayPal checkout capture", async () => {
+    const existing = cancelableOrder({ paypalCaptureId: "CAP-MAIN" });
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(existing);
+    vi.mocked(db.order.update).mockResolvedValue({ ...existing, status: "cancelled" });
+
+    const result = await caller.orders.cancelOrder({ id: "order-123" });
+
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/v2/payments/captures/CAP-MAIN/refund"),
+      expect.anything()
+    );
+    expect(result.autoRefunded).toEqual([{ channel: "paypal", amount: 60 }]);
+    expect(result.manualReturn).toEqual([]);
+  });
+
+  it("lists cash alone in manualReturn when that's all that was collected", async () => {
+    const existing = cancelableOrder({ cashCollected: "25.00" });
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(existing);
+    vi.mocked(db.order.update).mockResolvedValue({ ...existing, status: "cancelled" });
+
+    const result = await caller.orders.cancelOrder({ id: "order-123" });
+
+    expect(result.autoRefunded).toEqual([]);
+    expect(result.manualReturn).toEqual([{ channel: "cash", amount: 25 }]);
+  });
+
+  it("returns empty summaries when nothing was ever collected", async () => {
+    const existing = cancelableOrder({});
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(existing);
+    vi.mocked(db.order.update).mockResolvedValue({ ...existing, status: "cancelled" });
+
+    const result = await caller.orders.cancelOrder({ id: "order-123" });
+
+    expect(result.autoRefunded).toEqual([]);
+    expect(result.manualReturn).toEqual([]);
+  });
+
+  it("still resets cashCollected and un-pays all custom payment requests", async () => {
+    const existing = cancelableOrder({
+      cashCollected: "20.00",
+      customPaymentRequests: [{ id: "cp-venmo", amount: "10.00", channel: "venmo", paypalCaptureId: null, paid: true }],
+    });
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(existing);
+    vi.mocked(db.order.update).mockResolvedValue({ ...existing, status: "cancelled", cashCollected: null });
+
+    await caller.orders.cancelOrder({ id: "order-123" });
+
+    expect(db.customPaymentRequest.updateMany).toHaveBeenCalledWith({
+      where: { orderId: "order-123" },
+      data: { paid: false },
+    });
+    expect(db.order.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: "cancelled", cashCollected: null } })
+    );
+  });
+
+  it("marks a ready/shipped/delivered order as refunded rather than cancelled", async () => {
+    const existing = cancelableOrder({ status: "shipped", paypalCaptureId: "CAP-MAIN" });
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(existing);
+    vi.mocked(db.order.update).mockResolvedValue({ ...existing, status: "refunded" });
+
+    const result = await caller.orders.cancelOrder({ id: "order-123" });
+
+    expect(db.order.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: "refunded", cashCollected: null } })
+    );
+    expect(result.isRefund).toBe(true);
   });
 });
