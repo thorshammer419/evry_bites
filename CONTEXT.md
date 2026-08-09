@@ -58,7 +58,7 @@ A running total of cash or check physically collected against an Order, logged m
 
 ## Custom Payment Request
 
-A request for part (or all) of an Order's Balance Due through a specific channel — `paypal` or `venmo` — distinct from the Order's Payment Method. PayPal requests are captured and marked paid automatically through the customer-facing payment link; Venmo requests have no capture API and are marked paid manually by the owner. Either kind can also be marked paid manually as a fallback, since real payments don't always arrive through the tracked path. An Order can carry several — paid and pending — across both channels.
+A request for part (or all) of an Order's Balance Due through a specific channel — `paypal` or `venmo` — distinct from the Order's Payment Method. PayPal requests are captured and marked paid automatically through the customer-facing payment link; Venmo requests have no capture API and are marked paid manually by the owner. Either kind can also be marked paid manually as a fallback, since real payments don't always arrive through the tracked path. A manually-marked payment can be undone by the owner (e.g. marked by mistake); a real captured PayPal payment cannot — undoing that requires an actual refund, handled through Order Cancellation instead. An Order can carry several — paid and pending — across both channels.
 
 ## Balance Due
 

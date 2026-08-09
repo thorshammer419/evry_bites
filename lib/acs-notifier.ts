@@ -113,6 +113,8 @@ export class AcsNotifier implements Notifier {
       await this.sendCustomPaymentRequest(event.order, event.amount, event.paymentUrl, event.paymentType, connectionString);
     } else if (event.type === "order.custom_payment_received") {
       await this.sendCustomPaymentReceived(event.order, event.amount, connectionString);
+    } else if (event.type === "order.custom_payment_unmarked") {
+      await this.sendCustomPaymentUnmarked(event.order, event.amount, connectionString);
     } else if (event.type === "user.cash_check_requested") {
       await this.sendCashCheckRequest(event.request, connectionString);
     } else {
@@ -500,6 +502,42 @@ export class AcsNotifier implements Notifier {
         console.error(`[notifications] custom-payment-received channel ${i} failed:`, r.reason);
       }
     });
+  }
+
+  private async sendCustomPaymentUnmarked(
+    order: import("./notifier").OrderForNotification,
+    amount: number,
+    connectionString: string
+  ): Promise<void> {
+    const fromEmail = process.env.ACS_FROM_EMAIL;
+    const ownerEmails = (process.env.OWNER_NOTIFICATION_EMAIL ?? "")
+      .split(",")
+      .map((e) => e.trim())
+      .filter(Boolean);
+    if (!fromEmail || ownerEmails.length === 0) return;
+
+    const ref = order.id.slice(0, 8).toUpperCase();
+    const name = customerName(order);
+
+    const subject = `EvryBites — Payment Mark Reversed for Order #${ref}`;
+    const body = [
+      `A manually-marked payment was undone.`,
+      "",
+      `Order #${ref}`,
+      `Customer: ${name} (${order.customerEmail})`,
+      `Amount: $${amount.toFixed(2)}`,
+      "",
+      "The customer was NOT notified of this reversal.",
+    ].join("\n");
+
+    const { EmailClient } = await import("@azure/communication-email");
+    await new EmailClient(connectionString)
+      .beginSend({
+        senderAddress: fromEmail,
+        recipients: { to: ownerEmails.map((address) => ({ address })) },
+        content: { subject, plainText: body },
+      })
+      .catch((err) => console.error("[notifications] custom-payment-unmarked failed:", err));
   }
 
   private async sendStatusChanged(

@@ -967,6 +967,44 @@ export const ordersRouter = router({
       return { success: true };
     }),
 
+  unmarkCustomPaymentReceived: publicProcedure
+    .input(z.object({ requestId: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const request = await db.customPaymentRequest.findUnique({
+        where: { id: input.requestId },
+        include: { order: true },
+      });
+      if (!request) throw new TRPCError({ code: "NOT_FOUND", message: "Payment request not found" });
+      if (!request.paid) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "This payment hasn't been marked received." });
+      }
+      // A real PayPal capture moved real money — undoing that needs an
+      // actual refund (see cancelOrder), not a flag flip.
+      if (request.paypalCaptureId) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Cannot undo a captured PayPal payment — cancel or refund the order instead.",
+        });
+      }
+      if (isCancelledOrRefunded(request.order.status)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Cannot undo a payment mark on a cancelled or refunded order.",
+        });
+      }
+
+      await db.customPaymentRequest.update({
+        where: { id: input.requestId },
+        data: { paid: false },
+      });
+
+      ctx.notifier
+        .notify({ type: "order.custom_payment_unmarked", order: request.order, amount: Number(request.amount) })
+        .catch((err) => console.error("[orders] custom-payment-unmarked notification failed:", err));
+
+      return { success: true };
+    }),
+
   requestCashCheckApproval: publicProcedure
     .input(z.object({
       userId: z.string(),

@@ -35,6 +35,7 @@ type OrderWithItems = {
     id: string;
     amount: Prisma.Decimal;
     channel: PaymentLinkChannel;
+    paypalCaptureId: string | null;
     paid: boolean;
     createdAt: Date;
   }[];
@@ -537,6 +538,10 @@ function OrderRow({ order }: { order: OrderWithItems }) {
     onSuccess: () => { utils.orders.listAll.invalidate(); },
   });
 
+  const unmarkReceived = trpc.orders.unmarkCustomPaymentReceived.useMutation({
+    onSuccess: () => { utils.orders.listAll.invalidate(); },
+  });
+
   const total = Number(order.totalAmount);
   const collected = order.cashCollected !== null && order.cashCollected !== undefined
     ? Number(order.cashCollected)
@@ -554,7 +559,7 @@ function OrderRow({ order }: { order: OrderWithItems }) {
   const next = nextStatus(order);
   const prev = previousStatus(order);
   const ref = order.id.slice(0, 8).toUpperCase();
-  const isMutating = updateStatus.isPending || cancelOrder.isPending || changePayment.isPending || adminSetStatus.isPending || logCash.isPending || requestRemainingBalance.isPending || markReceived.isPending;
+  const isMutating = updateStatus.isPending || cancelOrder.isPending || changePayment.isPending || adminSetStatus.isPending || logCash.isPending || requestRemainingBalance.isPending || markReceived.isPending || unmarkReceived.isPending;
 
   const date = new Date(order.createdAt).toLocaleDateString("en-US", {
     month: "short", day: "numeric", year: "numeric",
@@ -643,6 +648,15 @@ function OrderRow({ order }: { order: OrderWithItems }) {
                           className="text-xs px-2 py-1 rounded-lg border border-emerald-300 text-emerald-700 font-medium hover:bg-emerald-50 transition-colors disabled:opacity-60"
                         >
                           {markReceived.isPending ? "Marking..." : "Mark Received"}
+                        </button>
+                      )}
+                      {r.paid && !r.paypalCaptureId && !isCancelledOrRefunded(order.status) && (
+                        <button
+                          onClick={() => unmarkReceived.mutate({ requestId: r.id })}
+                          disabled={isMutating}
+                          className="text-xs px-2 py-1 rounded-lg border border-sky-200 text-sky-600 font-medium hover:bg-sky-50 transition-colors disabled:opacity-60"
+                        >
+                          {unmarkReceived.isPending ? "Undoing..." : "Undo"}
                         </button>
                       )}
                     </span>

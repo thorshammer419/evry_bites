@@ -947,3 +947,113 @@ describe("orders.cancelOrder", () => {
     expect(result.isRefund).toBe(true);
   });
 });
+
+describe("orders.unmarkCustomPaymentReceived", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function paidRequest(overrides: {
+    channel?: "paypal" | "venmo";
+    paypalCaptureId?: string | null;
+    orderStatus?: string;
+  } = {}) {
+    return {
+      id: "req-1",
+      orderId: "order-123",
+      amount: "19.00" as never,
+      channel: overrides.channel ?? "venmo",
+      paypalOrderId: null,
+      paypalCaptureId: overrides.paypalCaptureId ?? null,
+      paid: true,
+      createdAt: new Date(),
+      order: { ...mockOrder, status: overrides.orderStatus ?? "received" },
+    };
+  }
+
+  it("unmarks a manually-marked Venmo payment", async () => {
+    vi.mocked(db.customPaymentRequest.findUnique).mockResolvedValue(paidRequest({ channel: "venmo" }));
+
+    const result = await caller.orders.unmarkCustomPaymentReceived({ requestId: "req-1" });
+
+    expect(db.customPaymentRequest.update).toHaveBeenCalledWith({
+      where: { id: "req-1" },
+      data: { paid: false },
+    });
+    expect(mockNotify).toHaveBeenCalledWith({
+      type: "order.custom_payment_unmarked",
+      order: expect.objectContaining({ id: "order-123" }),
+      amount: 19,
+    });
+    expect(result).toEqual({ success: true });
+    expect(db.order.update).not.toHaveBeenCalled();
+  });
+
+  it("unmarks a manually-marked PayPal payment (force-marked without a real capture)", async () => {
+    vi.mocked(db.customPaymentRequest.findUnique).mockResolvedValue(
+      paidRequest({ channel: "paypal", paypalCaptureId: null })
+    );
+
+    await caller.orders.unmarkCustomPaymentReceived({ requestId: "req-1" });
+
+    expect(db.customPaymentRequest.update).toHaveBeenCalledWith({
+      where: { id: "req-1" },
+      data: { paid: false },
+    });
+  });
+
+  it("rejects a PayPal payment that was actually captured via the API", async () => {
+    vi.mocked(db.customPaymentRequest.findUnique).mockResolvedValue(
+      paidRequest({ channel: "paypal", paypalCaptureId: "CAP-1" })
+    );
+
+    await expect(
+      caller.orders.unmarkCustomPaymentReceived({ requestId: "req-1" })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    expect(db.customPaymentRequest.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects when the request isn't paid", async () => {
+    vi.mocked(db.customPaymentRequest.findUnique).mockResolvedValue({
+      ...paidRequest(),
+      paid: false,
+    });
+
+    await expect(
+      caller.orders.unmarkCustomPaymentReceived({ requestId: "req-1" })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    expect(db.customPaymentRequest.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects on a cancelled order", async () => {
+    vi.mocked(db.customPaymentRequest.findUnique).mockResolvedValue(
+      paidRequest({ orderStatus: "cancelled" })
+    );
+
+    await expect(
+      caller.orders.unmarkCustomPaymentReceived({ requestId: "req-1" })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    expect(db.customPaymentRequest.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects on a refunded order", async () => {
+    vi.mocked(db.customPaymentRequest.findUnique).mockResolvedValue(
+      paidRequest({ orderStatus: "refunded" })
+    );
+
+    await expect(
+      caller.orders.unmarkCustomPaymentReceived({ requestId: "req-1" })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("rejects when the request doesn't exist", async () => {
+    vi.mocked(db.customPaymentRequest.findUnique).mockResolvedValue(null);
+
+    await expect(
+      caller.orders.unmarkCustomPaymentReceived({ requestId: "missing" })
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+});
