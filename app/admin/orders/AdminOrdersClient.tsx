@@ -530,6 +530,10 @@ function OrderRow({ order }: { order: OrderWithItems }) {
     onSuccess: () => { utils.orders.listAll.invalidate(); setShowLogCashModal(false); },
   });
 
+  const clearCash = trpc.orders.clearCashCollected.useMutation({
+    onSuccess: () => { utils.orders.listAll.invalidate(); },
+  });
+
   const requestRemainingBalance = trpc.orders.requestRemainingBalance.useMutation({
     onSuccess: () => { utils.orders.listAll.invalidate(); setShowCustomPaymentModal(false); setCustomPaymentSent(true); },
   });
@@ -559,7 +563,7 @@ function OrderRow({ order }: { order: OrderWithItems }) {
   const next = nextStatus(order);
   const prev = previousStatus(order);
   const ref = order.id.slice(0, 8).toUpperCase();
-  const isMutating = updateStatus.isPending || cancelOrder.isPending || changePayment.isPending || adminSetStatus.isPending || logCash.isPending || requestRemainingBalance.isPending || markReceived.isPending || unmarkReceived.isPending;
+  const isMutating = updateStatus.isPending || cancelOrder.isPending || changePayment.isPending || adminSetStatus.isPending || logCash.isPending || clearCash.isPending || requestRemainingBalance.isPending || markReceived.isPending || unmarkReceived.isPending;
 
   const date = new Date(order.createdAt).toLocaleDateString("en-US", {
     month: "short", day: "numeric", year: "numeric",
@@ -628,9 +632,20 @@ function OrderRow({ order }: { order: OrderWithItems }) {
               <span>${total.toFixed(2)}</span>
             </div>
             {collected !== null && (
-              <div className="flex justify-between text-sm text-sky-600 mt-1">
+              <div className="flex items-center justify-between text-sm text-sky-600 mt-1">
                 <span>Cash collected</span>
-                <span>${collected.toFixed(2)}</span>
+                <span className="flex items-center gap-2">
+                  <span>${collected.toFixed(2)}</span>
+                  {!isCancelledOrRefunded(order.status) && (
+                    <button
+                      onClick={() => clearCash.mutate({ id: order.id })}
+                      disabled={isMutating}
+                      className="text-xs px-2 py-1 rounded-lg border border-sky-200 text-sky-600 font-medium hover:bg-sky-50 transition-colors disabled:opacity-60"
+                    >
+                      {clearCash.isPending ? "Clearing..." : "Clear"}
+                    </button>
+                  )}
+                </span>
               </div>
             )}
             {order.customPaymentRequests.length > 0 && (

@@ -1057,3 +1057,141 @@ describe("orders.unmarkCustomPaymentReceived", () => {
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 });
+
+describe("orders.logCashCollected", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function pendingCashOrder(overrides: Partial<typeof mockOrder> & {
+    customPaymentRequests?: { amount: string; paid: boolean }[];
+  } = {}) {
+    return {
+      ...mockOrder,
+      paymentMethod: "cash",
+      status: "pending_payment",
+      totalAmount: "39.00",
+      cashCollected: null,
+      customPaymentRequests: [],
+      ...overrides,
+    };
+  }
+
+  it("does not auto-advance when the logged amount alone doesn't cover the total", async () => {
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(pendingCashOrder());
+    vi.mocked(db.order.update).mockResolvedValue({ ...pendingCashOrder(), cashCollected: "10.00" });
+
+    await caller.orders.logCashCollected({ id: "order-123", amount: "10.00" });
+
+    expect(db.order.update).toHaveBeenCalledTimes(1);
+    expect(mockNotify).not.toHaveBeenCalledWith(expect.objectContaining({ type: "order.received" }));
+  });
+
+  it("auto-advances when the logged amount alone covers the total", async () => {
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(pendingCashOrder());
+    vi.mocked(db.order.update).mockResolvedValue({ ...pendingCashOrder(), cashCollected: "39.00", status: "received" });
+
+    await caller.orders.logCashCollected({ id: "order-123", amount: "39.00" });
+
+    expect(mockNotify).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "order.received" })
+    );
+  });
+
+  it("auto-advances when cash plus an already-paid custom payment request together cover the total (regression: balanceDue accounts for both)", async () => {
+    const existing = pendingCashOrder({
+      customPaymentRequests: [{ amount: "20.00", paid: true }],
+    });
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(existing);
+    vi.mocked(db.order.update).mockResolvedValue({ ...existing, cashCollected: "19.00", status: "received" });
+
+    await caller.orders.logCashCollected({ id: "order-123", amount: "19.00" });
+
+    expect(mockNotify).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "order.received" })
+    );
+  });
+
+  it("does not auto-advance when the order isn't pending_payment", async () => {
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(pendingCashOrder({ status: "received" }));
+    vi.mocked(db.order.update).mockResolvedValue({ ...pendingCashOrder(), cashCollected: "39.00", status: "received" });
+
+    await caller.orders.logCashCollected({ id: "order-123", amount: "39.00" });
+
+    expect(db.order.update).toHaveBeenCalledTimes(1);
+    expect(mockNotify).not.toHaveBeenCalledWith(expect.objectContaining({ type: "order.received" }));
+  });
+});
+
+describe("orders.clearCashCollected", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function orderWithCash(overrides: Partial<typeof mockOrder> = {}) {
+    return {
+      ...mockOrder,
+      paymentMethod: "cash",
+      status: "received",
+      cashCollected: "20.00",
+      ...overrides,
+    };
+  }
+
+  it("clears a logged cash amount back to null", async () => {
+    const existing = orderWithCash();
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(existing);
+    vi.mocked(db.order.update).mockResolvedValue({ ...existing, cashCollected: null });
+
+    const result = await caller.orders.clearCashCollected({ id: "order-123" });
+
+    expect(db.order.update).toHaveBeenCalledWith({
+      where: { id: "order-123" },
+      data: { cashCollected: null },
+      include: expect.anything(),
+    });
+    expect(mockNotify).toHaveBeenCalledWith({
+      type: "order.cash_collected_cleared",
+      order: expect.objectContaining({ id: "order-123" }),
+      amount: 20,
+    });
+    expect(result.cashCollected).toBeNull();
+  });
+
+  it("is available even if the payment method has since changed away from cash", async () => {
+    const existing = orderWithCash({ paymentMethod: "venmo" });
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(existing);
+    vi.mocked(db.order.update).mockResolvedValue({ ...existing, cashCollected: null });
+
+    await expect(caller.orders.clearCashCollected({ id: "order-123" })).resolves.toBeDefined();
+    expect(db.order.update).toHaveBeenCalled();
+  });
+
+  it("rejects when there's nothing to clear", async () => {
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(orderWithCash({ cashCollected: null }));
+
+    await expect(
+      caller.orders.clearCashCollected({ id: "order-123" })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    expect(db.order.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects on a cancelled order", async () => {
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(orderWithCash({ status: "cancelled" }));
+
+    await expect(
+      caller.orders.clearCashCollected({ id: "order-123" })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    expect(db.order.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects on a refunded order", async () => {
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(orderWithCash({ status: "refunded" }));
+
+    await expect(
+      caller.orders.clearCashCollected({ id: "order-123" })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+});

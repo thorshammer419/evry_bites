@@ -39,6 +39,7 @@ export type OrderEvent =
   | { type: "order.custom_payment_requested"; order: OrderForNotification; amount: number; paymentUrl: string; paymentType: "paypal" | "venmo" }
   | { type: "order.custom_payment_received"; order: OrderForNotification; amount: number }
   | { type: "order.custom_payment_unmarked"; order: OrderForNotification; amount: number }
+  | { type: "order.cash_collected_cleared"; order: OrderForNotification; amount: number }
   | { type: "user.cash_check_requested"; request: CashCheckRequestForNotification };
 
 export interface Notifier {

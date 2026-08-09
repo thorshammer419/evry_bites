@@ -711,8 +711,10 @@ export const ordersRouter = router({
         include: INCLUDE_FULL,
       });
 
-      // Auto-advance to received when full amount is collected on a pending_payment order
-      if (order.status === "pending_payment" && Number(input.amount) >= Number(order.totalAmount)) {
+      // Auto-advance to received when Balance Due is fully covered on a
+      // pending_payment order — accounts for cash together with any already
+      // paid custom payment requests, not just this logged amount alone.
+      if (order.status === "pending_payment" && balanceDue(updated) <= 0) {
         const advanced = await db.order.update({
           where: { id: input.id },
           data: { status: "received" },
@@ -723,6 +725,36 @@ export const ordersRouter = router({
           .catch((err) => console.error("[orders] cash-auto-received notification failed:", err));
         return advanced;
       }
+
+      return updated;
+    }),
+
+  clearCashCollected: publicProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const existing = await db.order.findUniqueOrThrow({ where: { id: input.id } });
+
+      if (existing.cashCollected === null) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "No cash collected amount to clear." });
+      }
+      if (isCancelledOrRefunded(existing.status)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Cannot clear cash collected on a cancelled or refunded order.",
+        });
+      }
+
+      const clearedAmount = Number(existing.cashCollected);
+
+      const updated = await db.order.update({
+        where: { id: input.id },
+        data: { cashCollected: null },
+        include: INCLUDE_FULL,
+      });
+
+      ctx.notifier
+        .notify({ type: "order.cash_collected_cleared", order: updated, amount: clearedAmount })
+        .catch((err) => console.error("[orders] cash-collected-cleared notification failed:", err));
 
       return updated;
     }),

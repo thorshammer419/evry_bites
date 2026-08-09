@@ -115,6 +115,8 @@ export class AcsNotifier implements Notifier {
       await this.sendCustomPaymentReceived(event.order, event.amount, connectionString);
     } else if (event.type === "order.custom_payment_unmarked") {
       await this.sendCustomPaymentUnmarked(event.order, event.amount, connectionString);
+    } else if (event.type === "order.cash_collected_cleared") {
+      await this.sendCashCollectedCleared(event.order, event.amount, connectionString);
     } else if (event.type === "user.cash_check_requested") {
       await this.sendCashCheckRequest(event.request, connectionString);
     } else {
@@ -538,6 +540,42 @@ export class AcsNotifier implements Notifier {
         content: { subject, plainText: body },
       })
       .catch((err) => console.error("[notifications] custom-payment-unmarked failed:", err));
+  }
+
+  private async sendCashCollectedCleared(
+    order: import("./notifier").OrderForNotification,
+    amount: number,
+    connectionString: string
+  ): Promise<void> {
+    const fromEmail = process.env.ACS_FROM_EMAIL;
+    const ownerEmails = (process.env.OWNER_NOTIFICATION_EMAIL ?? "")
+      .split(",")
+      .map((e) => e.trim())
+      .filter(Boolean);
+    if (!fromEmail || ownerEmails.length === 0) return;
+
+    const ref = order.id.slice(0, 8).toUpperCase();
+    const name = customerName(order);
+
+    const subject = `EvryBites — Cash Collected Cleared for Order #${ref}`;
+    const body = [
+      `A logged cash amount was cleared.`,
+      "",
+      `Order #${ref}`,
+      `Customer: ${name} (${order.customerEmail})`,
+      `Amount cleared: $${amount.toFixed(2)}`,
+      "",
+      "The customer was NOT notified of this change.",
+    ].join("\n");
+
+    const { EmailClient } = await import("@azure/communication-email");
+    await new EmailClient(connectionString)
+      .beginSend({
+        senderAddress: fromEmail,
+        recipients: { to: ownerEmails.map((address) => ({ address })) },
+        content: { subject, plainText: body },
+      })
+      .catch((err) => console.error("[notifications] cash-collected-cleared failed:", err));
   }
 
   private async sendStatusChanged(

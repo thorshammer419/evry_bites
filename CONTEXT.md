@@ -54,7 +54,7 @@ The channel the customer originally chose to pay with at checkout: `venmo`, `pay
 
 ## Cash Collected
 
-A running total of cash or check physically collected against an Order, logged manually by the owner. Independent of the Order's current Payment Method — persists and displays regardless of what Payment Method says. Never negative; overpayment is not tracked as credit, and Balance Due simply clamps at zero once covered.
+A running total of cash or check physically collected against an Order, logged manually by the owner. Independent of the Order's current Payment Method — persists and displays regardless of what Payment Method says. Never negative; overpayment is not tracked as credit, and Balance Due simply clamps at zero once covered. Unlike a Custom Payment Request, it's a single running total rather than discrete entries — logging again overwrites the prior value rather than adding to it. Can be cleared back to not-logged by the owner (e.g. logged by mistake), the same reversibility a manually-marked Custom Payment Request has.
 
 ## Custom Payment Request
 
