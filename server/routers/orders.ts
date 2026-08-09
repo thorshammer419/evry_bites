@@ -2,7 +2,8 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, publicProcedure } from "../trpc";
 import { db } from "../../lib/db";
-import { isValidTransition, REFUND_STATUSES } from "../../lib/order-lifecycle";
+import { isValidTransition, isCancelledOrRefunded, REFUND_STATUSES } from "../../lib/order-lifecycle";
+import { balanceDue } from "../../lib/payments";
 
 const INCLUDE_FULL = {
   orderItems: { include: { product: true } },
@@ -502,7 +503,7 @@ export const ordersRouter = router({
     .mutation(async ({ input, ctx }) => {
       const existing = await db.order.findUniqueOrThrow({ where: { id: input.id } });
 
-      if (existing.status === "cancelled" || existing.status === "refunded") {
+      if (isCancelledOrRefunded(existing.status)) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: `Cannot cancel an order that is already ${existing.status}.`,
@@ -622,7 +623,7 @@ export const ordersRouter = router({
       status: z.enum(["pending_payment", "received", "processing", "ready", "shipped", "delivered", "cancelled", "refunded"]),
     }))
     .mutation(async ({ input }) => {
-      const isCancellation = input.status === "cancelled" || input.status === "refunded";
+      const isCancellation = isCancelledOrRefunded(input.status);
       if (isCancellation) {
         await db.customPaymentRequest.updateMany({
           where: { orderId: input.id },
@@ -760,30 +761,44 @@ export const ordersRouter = router({
       return updated;
     }),
 
-  sendCustomPaymentLink: publicProcedure
+  requestRemainingBalance: publicProcedure
     .input(z.object({
       orderId: z.string(),
+      channel: z.enum(["paypal", "venmo"]),
       amount: z.number().positive(),
     }))
     .mutation(async ({ input, ctx }) => {
-      const order = await db.order.findUnique({ where: { id: input.orderId } });
+      const order = await db.order.findUnique({
+        where: { id: input.orderId },
+        include: INCLUDE_FULL,
+      });
       if (!order) throw new TRPCError({ code: "NOT_FOUND", message: "Order not found" });
 
-      if (order.paymentMethod === "venmo") {
-        // Venmo: send a deep-link email; no CustomPaymentRequest record needed
+      if (isCancelledOrRefunded(order.status)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Cannot request payment on a cancelled or refunded order.",
+        });
+      }
+
+      if (balanceDue(order) <= 0) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "This order has no remaining balance." });
+      }
+
+      const request = await db.customPaymentRequest.create({
+        data: { orderId: input.orderId, amount: input.amount, channel: input.channel },
+      });
+
+      if (input.channel === "venmo") {
         const venmoHandle = process.env.VENMO_HANDLE ?? "@evrybites";
         const note = encodeURIComponent(`Order #${order.id.slice(0, 8).toUpperCase()}`);
         const venmoUrl = `https://venmo.com/${venmoHandle.replace("@", "")}?txn=pay&amount=${input.amount.toFixed(2)}&note=${note}`;
         ctx.notifier
           .notify({ type: "order.custom_payment_requested", order, amount: input.amount, paymentUrl: venmoUrl, paymentType: "venmo" })
           .catch((err) => console.error("[orders] custom-venmo-link notification failed:", err));
-        return { requestId: null };
+        return { requestId: request.id };
       }
 
-      // PayPal: create a tracked CustomPaymentRequest and send payment page link
-      const request = await db.customPaymentRequest.create({
-        data: { orderId: input.orderId, amount: input.amount },
-      });
       const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://evrybites.com";
       const paymentUrl = `${baseUrl}/order/pay/custom/${request.id}`;
       ctx.notifier

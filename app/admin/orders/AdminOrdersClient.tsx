@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import type { FulfillmentType, OrderStatus, PaymentMethod } from "@prisma/client";
+import type { FulfillmentType, OrderStatus, PaymentMethod, PaymentLinkChannel, Prisma } from "@prisma/client";
 import { trpc } from "../../../lib/trpc/react";
-import { nextStatus, previousStatus, isTerminal, REFUND_STATUSES } from "../../../lib/order-lifecycle";
+import { nextStatus, previousStatus, isTerminal, isCancelledOrRefunded, REFUND_STATUSES } from "../../../lib/order-lifecycle";
+import { balanceDue } from "../../../lib/payments";
 
 type OrderWithItems = {
   id: string;
@@ -19,8 +20,8 @@ type OrderWithItems = {
   paymentMethod: PaymentMethod;
   notes: string | null;
   status: OrderStatus;
-  totalAmount: unknown;
-  cashCollected: unknown;
+  totalAmount: Prisma.Decimal;
+  cashCollected: Prisma.Decimal | null;
   createdAt: Date;
   orderItems: {
     id: string;
@@ -31,7 +32,8 @@ type OrderWithItems = {
   }[];
   customPaymentRequests: {
     id: string;
-    amount: unknown;
+    amount: Prisma.Decimal;
+    channel: PaymentLinkChannel;
     paid: boolean;
     createdAt: Date;
   }[];
@@ -397,28 +399,40 @@ function ChangePaymentModal({ currentMethod, onConfirm, onClose, isPending }: {
   );
 }
 
-function SendCustomPaymentModal({ orderTotal, paymentMethod, onConfirm, onClose, isPending }: {
-  orderTotal: number;
-  paymentMethod: string;
-  onConfirm: (amount: number) => void;
+function RequestRemainingBalanceModal({ amountOwed, onConfirm, onClose, isPending }: {
+  amountOwed: number;
+  onConfirm: (channel: "paypal" | "venmo", amount: number) => void;
   onClose: () => void;
   isPending: boolean;
 }) {
-  const [rawAmount, setRawAmount] = useState(orderTotal.toFixed(2));
+  const [channel, setChannel] = useState<"paypal" | "venmo">("paypal");
+  const [rawAmount, setRawAmount] = useState(amountOwed.toFixed(2));
   const parsed = parseFloat(rawAmount);
   const valid = !isNaN(parsed) && parsed > 0;
-  const isVenmo = paymentMethod === "venmo";
+  const isVenmo = channel === "venmo";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5">
-        <h2 className="text-lg font-bold text-blue-900 mb-1">Send Custom Payment Link</h2>
+        <h2 className="text-lg font-bold text-blue-900 mb-1">Request Remaining Balance</h2>
         <p className="text-sm text-blue-700 mb-4">
-          Enter the amount to request. The customer will receive an email with a {isVenmo ? "Venmo payment link" : "link to pay via PayPal"}.{" "}
+          Choose how to collect the rest of what&apos;s owed. The customer will receive an email with a {isVenmo ? "Venmo payment link" : "link to pay via PayPal"}.{" "}
           {isVenmo
-            ? "Venmo payments are not tracked automatically — advance the order status manually when payment is received."
+            ? "Venmo payments are not tracked automatically — mark the request received once payment comes in."
             : <>The order will advance to <span className="font-semibold">Received</span> automatically once the full amount is collected.</>}
         </p>
+        <div className="flex gap-2 mb-4">
+          {(["paypal", "venmo"] as const).map((c) => (
+            <label key={c}
+              className={`flex-1 flex items-center justify-center gap-2 p-2.5 rounded-xl border cursor-pointer transition-colors ${
+                channel === c ? "border-blue-900 bg-sky-50" : "border-sky-200 hover:bg-sky-50"
+              }`}>
+              <input type="radio" name="requestChannel" value={c} checked={channel === c}
+                onChange={() => setChannel(c)} className="accent-blue-900" />
+              <span className="text-sm font-medium text-blue-900">{c === "paypal" ? "PayPal" : "Venmo"}</span>
+            </label>
+          ))}
+        </div>
         <label className="block text-sm font-medium text-blue-900 mb-1">Amount ($)</label>
         <input
           type="number"
@@ -433,7 +447,7 @@ function SendCustomPaymentModal({ orderTotal, paymentMethod, onConfirm, onClose,
             className="flex-1 border border-sky-200 text-blue-800 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-sky-50 transition-colors disabled:opacity-60">
             Cancel
           </button>
-          <button onClick={() => valid && onConfirm(parsed)} disabled={isPending || !valid}
+          <button onClick={() => valid && onConfirm(channel, parsed)} disabled={isPending || !valid}
             className="flex-1 bg-blue-900 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-blue-800 transition-colors disabled:opacity-60">
             {isPending ? "Sending..." : "Send Link"}
           </button>
@@ -481,8 +495,8 @@ function OrderRow({ order }: { order: OrderWithItems }) {
     onSuccess: () => { utils.orders.listAll.invalidate(); setShowLogCashModal(false); },
   });
 
-  const sendCustomPayment = trpc.orders.sendCustomPaymentLink.useMutation({
-    onSuccess: () => { setShowCustomPaymentModal(false); setCustomPaymentSent(true); },
+  const requestRemainingBalance = trpc.orders.requestRemainingBalance.useMutation({
+    onSuccess: () => { utils.orders.listAll.invalidate(); setShowCustomPaymentModal(false); setCustomPaymentSent(true); },
   });
 
   const total = Number(order.totalAmount);
@@ -491,17 +505,19 @@ function OrderRow({ order }: { order: OrderWithItems }) {
     : null;
   const isCashOrCheck = order.paymentMethod === "cash" || order.paymentMethod === "check";
   const isFullyCollected = isCashOrCheck && collected !== null && collected >= total;
-  const showCashFlag = isCashOrCheck && !isTerminal(order.status) && order.status !== "cancelled" && order.status !== "refunded" && !isFullyCollected;
+  const showCashFlag = isCashOrCheck && !isTerminal(order.status) && !isCancelledOrRefunded(order.status) && !isFullyCollected;
   const paidCustomPayments = order.customPaymentRequests.filter((r) => r.paid);
   const customPaidTotal = paidCustomPayments.reduce((sum, r) => sum + Number(r.amount), 0);
   const hasPartialCustomPayment = paidCustomPayments.length > 0 && order.status === "pending_payment";
+  const owedBalance = balanceDue(order);
+  const canRequestBalance = owedBalance > 0 && !isCancelledOrRefunded(order.status);
   const isRefundAction = REFUND_STATUSES.includes(order.status);
-  const canCancelRefund = order.status !== "cancelled" && order.status !== "refunded";
+  const canCancelRefund = !isCancelledOrRefunded(order.status);
   const canChangePayment = !["delivered", "cancelled", "refunded"].includes(order.status);
   const next = nextStatus(order);
   const prev = previousStatus(order);
   const ref = order.id.slice(0, 8).toUpperCase();
-  const isMutating = updateStatus.isPending || cancelOrder.isPending || changePayment.isPending || adminSetStatus.isPending || logCash.isPending || sendCustomPayment.isPending;
+  const isMutating = updateStatus.isPending || cancelOrder.isPending || changePayment.isPending || adminSetStatus.isPending || logCash.isPending || requestRemainingBalance.isPending;
 
   const date = new Date(order.createdAt).toLocaleDateString("en-US", {
     month: "short", day: "numeric", year: "numeric",
@@ -636,7 +652,7 @@ function OrderRow({ order }: { order: OrderWithItems }) {
                 {updateStatus.isPending ? "Updating..." : getBackwardLabel(order, prev)}
               </button>
             )}
-            {isCashOrCheck && !isTerminal(order.status) && order.status !== "cancelled" && order.status !== "refunded" && (
+            {isCashOrCheck && !isTerminal(order.status) && !isCancelledOrRefunded(order.status) && (
               <button
                 onClick={() => setShowLogCashModal(true)}
                 disabled={isMutating}
@@ -654,13 +670,13 @@ function OrderRow({ order }: { order: OrderWithItems }) {
                 Change Payment Method
               </button>
             )}
-            {order.status === "pending_payment" && (order.paymentMethod === "paypal" || order.paymentMethod === "venmo") && (
+            {canRequestBalance && (
               <button
                 onClick={() => setShowCustomPaymentModal(true)}
                 disabled={isMutating}
                 className="w-full border border-violet-300 text-violet-700 px-4 py-2.5 rounded-xl font-semibold text-sm hover:bg-violet-50 transition-colors disabled:opacity-60"
               >
-                {customPaymentSent ? "Send Another Custom Payment Link" : "Send Custom Payment Link"}
+                {customPaymentSent ? "Request Balance Again" : "Request Remaining Balance"}
               </button>
             )}
             <button
@@ -731,12 +747,11 @@ function OrderRow({ order }: { order: OrderWithItems }) {
       )}
 
       {showCustomPaymentModal && (
-        <SendCustomPaymentModal
-          orderTotal={total}
-          paymentMethod={order.paymentMethod}
-          isPending={sendCustomPayment.isPending}
+        <RequestRemainingBalanceModal
+          amountOwed={owedBalance}
+          isPending={requestRemainingBalance.isPending}
           onClose={() => setShowCustomPaymentModal(false)}
-          onConfirm={(amount) => sendCustomPayment.mutate({ orderId: order.id, amount })}
+          onConfirm={(channel, amount) => requestRemainingBalance.mutate({ orderId: order.id, channel, amount })}
         />
       )}
 

@@ -12,9 +12,13 @@ vi.mock("../../lib/db", () => ({
     },
     order: {
       findMany: vi.fn(),
+      findUnique: vi.fn(),
       findUniqueOrThrow: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
+    },
+    customPaymentRequest: {
+      create: vi.fn(),
     },
   },
 }));
@@ -287,5 +291,136 @@ describe("orders.updateStatus", () => {
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
 
     expect(db.order.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("orders.requestRemainingBalance", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const cashOrder = {
+    ...mockOrder,
+    paymentMethod: "cash",
+    status: "received",
+    totalAmount: "39.00",
+    cashCollected: "20.00",
+    customPaymentRequests: [],
+  };
+
+  it("venmo channel: creates a tracked request and sends the Venmo deep link", async () => {
+    vi.mocked(db.order.findUnique).mockResolvedValue(cashOrder);
+    vi.mocked(db.customPaymentRequest.create).mockResolvedValue({
+      id: "req-venmo-1",
+      orderId: "order-123",
+      amount: "19.00" as never,
+      channel: "venmo",
+      paypalOrderId: null,
+      paypalCaptureId: null,
+      paid: false,
+      createdAt: new Date(),
+    });
+
+    const result = await caller.orders.requestRemainingBalance({
+      orderId: "order-123",
+      channel: "venmo",
+      amount: 19,
+    });
+
+    expect(db.customPaymentRequest.create).toHaveBeenCalledWith({
+      data: { orderId: "order-123", amount: 19, channel: "venmo" },
+    });
+    expect(mockNotify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "order.custom_payment_requested",
+        paymentType: "venmo",
+        amount: 19,
+      })
+    );
+    expect(result).toEqual({ requestId: "req-venmo-1" });
+    // The order's recorded payment method is never touched by this mutation.
+    expect(db.order.update).not.toHaveBeenCalled();
+  });
+
+  it("paypal channel: creates a tracked request and sends the payment-page link", async () => {
+    vi.mocked(db.order.findUnique).mockResolvedValue(cashOrder);
+    vi.mocked(db.customPaymentRequest.create).mockResolvedValue({
+      id: "req-paypal-1",
+      orderId: "order-123",
+      amount: "19.00" as never,
+      channel: "paypal",
+      paypalOrderId: null,
+      paypalCaptureId: null,
+      paid: false,
+      createdAt: new Date(),
+    });
+
+    const result = await caller.orders.requestRemainingBalance({
+      orderId: "order-123",
+      channel: "paypal",
+      amount: 19,
+    });
+
+    expect(db.customPaymentRequest.create).toHaveBeenCalledWith({
+      data: { orderId: "order-123", amount: 19, channel: "paypal" },
+    });
+    expect(mockNotify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "order.custom_payment_requested",
+        paymentType: "paypal",
+        paymentUrl: expect.stringContaining("req-paypal-1"),
+      })
+    );
+    expect(result).toEqual({ requestId: "req-paypal-1" });
+    expect(db.order.update).not.toHaveBeenCalled();
+  });
+
+  it("works on an order already delivered, as long as a balance remains", async () => {
+    vi.mocked(db.order.findUnique).mockResolvedValue({ ...cashOrder, status: "delivered" });
+    vi.mocked(db.customPaymentRequest.create).mockResolvedValue({
+      id: "req-3",
+      orderId: "order-123",
+      amount: "19.00" as never,
+      channel: "paypal",
+      paypalOrderId: null,
+      paypalCaptureId: null,
+      paid: false,
+      createdAt: new Date(),
+    });
+
+    await expect(
+      caller.orders.requestRemainingBalance({ orderId: "order-123", channel: "paypal", amount: 19 })
+    ).resolves.toEqual({ requestId: "req-3" });
+  });
+
+  it("rejects when the order has no remaining balance", async () => {
+    vi.mocked(db.order.findUnique).mockResolvedValue({ ...cashOrder, cashCollected: "39.00" });
+
+    await expect(
+      caller.orders.requestRemainingBalance({ orderId: "order-123", channel: "paypal", amount: 10 })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    expect(db.customPaymentRequest.create).not.toHaveBeenCalled();
+    expect(mockNotify).not.toHaveBeenCalled();
+  });
+
+  it("rejects on a cancelled order", async () => {
+    vi.mocked(db.order.findUnique).mockResolvedValue({ ...cashOrder, status: "cancelled" });
+
+    await expect(
+      caller.orders.requestRemainingBalance({ orderId: "order-123", channel: "paypal", amount: 19 })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    expect(db.customPaymentRequest.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects on a refunded order", async () => {
+    vi.mocked(db.order.findUnique).mockResolvedValue({ ...cashOrder, status: "refunded" });
+
+    await expect(
+      caller.orders.requestRemainingBalance({ orderId: "order-123", channel: "venmo", amount: 19 })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    expect(db.customPaymentRequest.create).not.toHaveBeenCalled();
   });
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isValidTransition, nextStatuses, nextStatus, previousStatus, isTerminal } from "./order-lifecycle";
+import { isValidTransition, nextStatuses, nextStatus, previousStatus, isTerminal, isCancelledOrRefunded } from "./order-lifecycle";
 import type { FulfillmentType, OrderStatus } from "@prisma/client";
 
 function order(status: OrderStatus, fulfillmentType: FulfillmentType = "local_delivery") {
@@ -98,5 +98,21 @@ describe("isTerminal", () => {
     expect(isTerminal("received")).toBe(false);
     expect(isTerminal("processing")).toBe(false);
     expect(isTerminal("ready")).toBe(false);
+  });
+});
+
+describe("isCancelledOrRefunded", () => {
+  it("returns true for cancelled and refunded", () => {
+    expect(isCancelledOrRefunded("cancelled")).toBe(true);
+    expect(isCancelledOrRefunded("refunded")).toBe(true);
+  });
+
+  it("returns false for every other status, including delivered", () => {
+    expect(isCancelledOrRefunded("received")).toBe(false);
+    expect(isCancelledOrRefunded("processing")).toBe(false);
+    expect(isCancelledOrRefunded("ready")).toBe(false);
+    expect(isCancelledOrRefunded("shipped")).toBe(false);
+    expect(isCancelledOrRefunded("delivered")).toBe(false);
+    expect(isCancelledOrRefunded("pending_payment")).toBe(false);
   });
 });

@@ -43,5 +43,9 @@ export function isTerminal(status: OrderStatus): boolean {
   return status === "delivered" || status === "cancelled" || status === "refunded";
 }
 
+export function isCancelledOrRefunded(status: OrderStatus): boolean {
+  return status === "cancelled" || status === "refunded";
+}
+
 // Statuses where cancellation becomes a refund action
 export const REFUND_STATUSES: OrderStatus[] = ["ready", "shipped", "delivered"];
