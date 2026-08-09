@@ -6,11 +6,31 @@ import type {
   OrderReceivedForNotification,
 } from "./notifier";
 
-function toE164(phone: string): string | null {
+export function toE164(phone: string): string | null {
   const digits = phone.replace(/\D/g, "");
   if (digits.length === 10) return `+1${digits}`;
   if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
   return null;
+}
+
+// Standalone SMS send, independent of the Notifier/OrderEvent abstraction —
+// admin login verification codes aren't order events.
+// phone must already be E.164-normalized (see toE164) — the caller validates
+// and normalizes at the point of collecting user input, this just sends.
+export async function sendVerificationCodeSms(phone: string, code: string): Promise<void> {
+  const connectionString = process.env.ACS_CONNECTION_STRING;
+  const fromPhone = process.env.ACS_FROM_PHONE;
+  if (!connectionString || !fromPhone) {
+    console.log("[notifications] ACS not configured — skipping verification code SMS");
+    return;
+  }
+
+  const { SmsClient } = await import("@azure/communication-sms");
+  await new SmsClient(connectionString).send({
+    from: fromPhone,
+    to: [phone],
+    message: `EvryBites admin verification code: ${code}. Expires in 10 minutes.`,
+  });
 }
 
 function customerName(order: OrderForNotification): string {
