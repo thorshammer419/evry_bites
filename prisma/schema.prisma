@@ -29,6 +29,11 @@ enum OrderStatus {
   refunded
 }
 
+enum PaymentLinkChannel {
+  paypal
+  venmo
+}
+
 model Product {
   id                 String       @id @default(uuid())
   name               String
@@ -70,14 +75,15 @@ model Order {
 }
 
 model CustomPaymentRequest {
-  id              String   @id @default(cuid())
+  id              String             @id @default(cuid())
   orderId         String
-  order           Order    @relation(fields: [orderId], references: [id])
-  amount          Decimal  @db.Decimal(10, 2)
+  order           Order              @relation(fields: [orderId], references: [id])
+  amount          Decimal            @db.Decimal(10, 2)
+  channel         PaymentLinkChannel @default(paypal)
   paypalOrderId   String?
   paypalCaptureId String?
-  paid            Boolean  @default(false)
-  createdAt       DateTime @default(now())
+  paid            Boolean            @default(false)
+  createdAt       DateTime           @default(now())
 }
 
 model OrderItem {
