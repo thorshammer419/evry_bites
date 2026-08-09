@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, publicProcedure } from "../trpc";
+import type { TRPCContext } from "../trpc";
 import { db } from "../../lib/db";
 import { isValidTransition, isCancelledOrRefunded, REFUND_STATUSES } from "../../lib/order-lifecycle";
 import { balanceDue } from "../../lib/payments";
@@ -9,6 +10,34 @@ const INCLUDE_FULL = {
   orderItems: { include: { product: true } },
   customPaymentRequests: true,
 } as const;
+
+// Called after a CustomPaymentRequest is marked paid (automatically via PayPal
+// capture, or manually via markCustomPaymentReceived) — advances a
+// pending_payment order to received once its Balance Due is fully covered
+// by Cash Collected and paid Custom Payment Requests combined, and notifies
+// about the payment either way (fully covered or still partial).
+async function settleCustomPayment(orderId: string, paidAmount: number, ctx: TRPCContext) {
+  const order = await db.order.findUniqueOrThrow({
+    where: { id: orderId },
+    include: INCLUDE_FULL,
+  });
+
+  if (order.status === "pending_payment" && balanceDue(order) <= 0) {
+    const advanced = await db.order.update({
+      where: { id: orderId },
+      data: { status: "received" },
+      include: INCLUDE_FULL,
+    });
+    ctx.notifier
+      .notify({ type: "order.payment_received", order: advanced })
+      .catch((err) => console.error("[orders] payment-auto-received notification failed:", err));
+    return;
+  }
+
+  ctx.notifier
+    .notify({ type: "order.custom_payment_received", order, amount: paidAmount })
+    .catch((err) => console.error("[orders] custom-payment-received notification failed:", err));
+}
 
 const orderFieldsSchema = z.object({
   firstName: z.string().min(1),
@@ -848,7 +877,6 @@ export const ordersRouter = router({
     .mutation(async ({ input, ctx }) => {
       const request = await db.customPaymentRequest.findUnique({
         where: { id: input.requestId },
-        include: { order: true },
       });
       if (!request) throw new TRPCError({ code: "NOT_FOUND", message: "Payment request not found" });
       if (request.paid) throw new TRPCError({ code: "BAD_REQUEST", message: "Already paid" });
@@ -875,32 +903,35 @@ export const ordersRouter = router({
       const updated = await db.customPaymentRequest.update({
         where: { id: input.requestId },
         data: { paid: true, ...(captureId ? { paypalCaptureId: captureId } : {}) },
+      });
+
+      await settleCustomPayment(updated.orderId, Number(updated.amount), ctx);
+
+      return { success: true };
+    }),
+
+  markCustomPaymentReceived: publicProcedure
+    .input(z.object({ requestId: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const request = await db.customPaymentRequest.findUnique({
+        where: { id: input.requestId },
         include: { order: true },
       });
-
-      // Sum all paid custom payments for this order to check if fully covered
-      const allPaid = await db.customPaymentRequest.findMany({
-        where: { orderId: updated.orderId, paid: true },
-      });
-      const totalPaid = allPaid.reduce((sum, p) => sum + Number(p.amount), 0);
-      const orderTotal = Number(updated.order.totalAmount);
-
-      if (updated.order.status === "pending_payment" && totalPaid >= orderTotal) {
-        // Fully paid — advance order and send payment-received notification
-        const advanced = await db.order.update({
-          where: { id: updated.orderId },
-          data: { status: "received" },
-          include: INCLUDE_FULL,
+      if (!request) throw new TRPCError({ code: "NOT_FOUND", message: "Payment request not found" });
+      if (request.paid) throw new TRPCError({ code: "BAD_REQUEST", message: "Already paid" });
+      if (isCancelledOrRefunded(request.order.status)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Cannot mark a payment received on a cancelled or refunded order.",
         });
-        ctx.notifier
-          .notify({ type: "order.payment_received", order: advanced })
-          .catch((err) => console.error("[orders] custom-payment-auto-received notification failed:", err));
-      } else {
-        // Partial — notify but don't advance
-        ctx.notifier
-          .notify({ type: "order.custom_payment_received", order: updated.order, amount: Number(updated.amount) })
-          .catch((err) => console.error("[orders] custom-payment-received notification failed:", err));
       }
+
+      await db.customPaymentRequest.update({
+        where: { id: input.requestId },
+        data: { paid: true },
+      });
+
+      await settleCustomPayment(request.orderId, Number(request.amount), ctx);
 
       return { success: true };
     }),

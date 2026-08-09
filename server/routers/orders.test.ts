@@ -19,6 +19,8 @@ vi.mock("../../lib/db", () => ({
     },
     customPaymentRequest: {
       create: vi.fn(),
+      findUnique: vi.fn(),
+      update: vi.fn(),
     },
   },
 }));
@@ -423,5 +425,259 @@ describe("orders.requestRemainingBalance", () => {
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
 
     expect(db.customPaymentRequest.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("orders.captureCustomPayment", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal("fetch", vi.fn(async (url: string) =>
+      String(url).includes("/oauth2/token")
+        ? { ok: true, json: async () => ({ access_token: "test-token" }) }
+        : { ok: true, json: async () => ({ purchase_units: [{ payments: { captures: [{ id: "CAP-1" }] } }] }) }
+    ));
+  });
+
+  it("auto-advances once cash plus this capture cover the total (regression: balanceDue accounts for cash)", async () => {
+    vi.mocked(db.customPaymentRequest.findUnique).mockResolvedValue({
+      id: "req-1",
+      orderId: "order-123",
+      amount: "19.00" as never,
+      channel: "paypal",
+      paypalOrderId: "PP-ORDER-1",
+      paypalCaptureId: null,
+      paid: false,
+      createdAt: new Date(),
+    });
+    vi.mocked(db.customPaymentRequest.update).mockResolvedValue({
+      id: "req-1",
+      orderId: "order-123",
+      amount: "19.00" as never,
+      channel: "paypal",
+      paypalOrderId: "PP-ORDER-1",
+      paypalCaptureId: "CAP-1",
+      paid: true,
+      createdAt: new Date(),
+    });
+    const fullyPaidOrder = {
+      ...mockOrder,
+      status: "pending_payment",
+      totalAmount: "39.00",
+      cashCollected: "20.00",
+      customPaymentRequests: [{ amount: "19.00", paid: true }],
+    };
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(fullyPaidOrder);
+    vi.mocked(db.order.update).mockResolvedValue({ ...fullyPaidOrder, status: "received" });
+
+    const result = await caller.orders.captureCustomPayment({ requestId: "req-1", paypalOrderId: "PP-ORDER-1" });
+
+    expect(db.order.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: "received" } })
+    );
+    expect(mockNotify).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "order.payment_received" })
+    );
+    expect(result).toEqual({ success: true });
+  });
+
+  it("does not advance when cash plus paid requests still leave a balance", async () => {
+    vi.mocked(db.customPaymentRequest.findUnique).mockResolvedValue({
+      id: "req-1",
+      orderId: "order-123",
+      amount: "10.00" as never,
+      channel: "paypal",
+      paypalOrderId: "PP-ORDER-1",
+      paypalCaptureId: null,
+      paid: false,
+      createdAt: new Date(),
+    });
+    vi.mocked(db.customPaymentRequest.update).mockResolvedValue({
+      id: "req-1",
+      orderId: "order-123",
+      amount: "10.00" as never,
+      channel: "paypal",
+      paypalOrderId: "PP-ORDER-1",
+      paypalCaptureId: "CAP-1",
+      paid: true,
+      createdAt: new Date(),
+    });
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue({
+      ...mockOrder,
+      status: "pending_payment",
+      totalAmount: "39.00",
+      cashCollected: "20.00",
+      customPaymentRequests: [{ amount: "10.00", paid: true }],
+    });
+
+    await caller.orders.captureCustomPayment({ requestId: "req-1", paypalOrderId: "PP-ORDER-1" });
+
+    expect(db.order.update).not.toHaveBeenCalled();
+    expect(mockNotify).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "order.custom_payment_received" })
+    );
+  });
+
+  it("rejects when the request is already paid", async () => {
+    vi.mocked(db.customPaymentRequest.findUnique).mockResolvedValue({
+      id: "req-1",
+      orderId: "order-123",
+      amount: "10.00" as never,
+      channel: "paypal",
+      paypalOrderId: "PP-ORDER-1",
+      paypalCaptureId: "CAP-0",
+      paid: true,
+      createdAt: new Date(),
+    });
+
+    await expect(
+      caller.orders.captureCustomPayment({ requestId: "req-1", paypalOrderId: "PP-ORDER-1" })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    expect(db.customPaymentRequest.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("orders.markCustomPaymentReceived", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function pendingRequest(channel: "paypal" | "venmo", amount = "19.00", orderStatus: string = "pending_payment") {
+    return {
+      id: "req-1",
+      orderId: "order-123",
+      amount: amount as never,
+      channel,
+      paypalOrderId: null,
+      paypalCaptureId: null,
+      paid: false,
+      createdAt: new Date(),
+      order: { status: orderStatus },
+    };
+  }
+
+  function balanceOrder(overrides: {
+    status?: string;
+    totalAmount?: string;
+    cashCollected?: string | null;
+    customPaymentRequests?: { amount: string; paid: boolean }[];
+  } = {}) {
+    return {
+      ...mockOrder,
+      status: overrides.status ?? "pending_payment",
+      totalAmount: overrides.totalAmount ?? "39.00",
+      cashCollected: overrides.cashCollected ?? null,
+      customPaymentRequests: overrides.customPaymentRequests ?? [],
+    };
+  }
+
+  it("marks a pending venmo request as paid without advancing when a balance remains", async () => {
+    vi.mocked(db.customPaymentRequest.findUnique).mockResolvedValue(pendingRequest("venmo"));
+    vi.mocked(db.customPaymentRequest.update).mockResolvedValue({ ...pendingRequest("venmo"), paid: true });
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(
+      balanceOrder({ customPaymentRequests: [{ amount: "19.00", paid: true }] })
+    );
+
+    const result = await caller.orders.markCustomPaymentReceived({ requestId: "req-1" });
+
+    expect(db.customPaymentRequest.update).toHaveBeenCalledWith({
+      where: { id: "req-1" },
+      data: { paid: true },
+    });
+    expect(db.order.update).not.toHaveBeenCalled();
+    expect(mockNotify).toHaveBeenCalledWith({
+      type: "order.custom_payment_received",
+      order: expect.objectContaining({ id: "order-123" }),
+      amount: 19,
+    });
+    expect(result).toEqual({ success: true });
+  });
+
+  it("marks a pending paypal request as paid without advancing when a balance remains", async () => {
+    vi.mocked(db.customPaymentRequest.findUnique).mockResolvedValue(pendingRequest("paypal"));
+    vi.mocked(db.customPaymentRequest.update).mockResolvedValue({ ...pendingRequest("paypal"), paid: true });
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(
+      balanceOrder({ customPaymentRequests: [{ amount: "19.00", paid: true }] })
+    );
+
+    await caller.orders.markCustomPaymentReceived({ requestId: "req-1" });
+
+    expect(db.order.update).not.toHaveBeenCalled();
+    expect(mockNotify).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "order.custom_payment_received" })
+    );
+  });
+
+  it("auto-advances pending_payment to received once the balance is fully covered", async () => {
+    vi.mocked(db.customPaymentRequest.findUnique).mockResolvedValue(pendingRequest("venmo", "39.00"));
+    vi.mocked(db.customPaymentRequest.update).mockResolvedValue({ ...pendingRequest("venmo", "39.00"), paid: true });
+    const fullyPaidOrder = balanceOrder({ customPaymentRequests: [{ amount: "39.00", paid: true }] });
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(fullyPaidOrder);
+    vi.mocked(db.order.update).mockResolvedValue({ ...fullyPaidOrder, status: "received" });
+
+    await caller.orders.markCustomPaymentReceived({ requestId: "req-1" });
+
+    expect(db.order.update).toHaveBeenCalledWith({
+      where: { id: "order-123" },
+      data: { status: "received" },
+      include: expect.anything(),
+    });
+    expect(mockNotify).toHaveBeenCalledWith({
+      type: "order.payment_received",
+      order: expect.objectContaining({ status: "received" }),
+    });
+  });
+
+  it("does not auto-advance when the order isn't in pending_payment, even if fully covered", async () => {
+    vi.mocked(db.customPaymentRequest.findUnique).mockResolvedValue(pendingRequest("venmo", "39.00", "received"));
+    vi.mocked(db.customPaymentRequest.update).mockResolvedValue({ ...pendingRequest("venmo", "39.00"), paid: true });
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(
+      balanceOrder({ status: "received", customPaymentRequests: [{ amount: "39.00", paid: true }] })
+    );
+
+    await caller.orders.markCustomPaymentReceived({ requestId: "req-1" });
+
+    expect(db.order.update).not.toHaveBeenCalled();
+    expect(mockNotify).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "order.custom_payment_received" })
+    );
+  });
+
+  it("rejects when the request is already paid", async () => {
+    vi.mocked(db.customPaymentRequest.findUnique).mockResolvedValue({ ...pendingRequest("venmo"), paid: true });
+
+    await expect(
+      caller.orders.markCustomPaymentReceived({ requestId: "req-1" })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    expect(db.customPaymentRequest.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects when the order is cancelled", async () => {
+    vi.mocked(db.customPaymentRequest.findUnique).mockResolvedValue(pendingRequest("venmo", "19.00", "cancelled"));
+
+    await expect(
+      caller.orders.markCustomPaymentReceived({ requestId: "req-1" })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    expect(db.customPaymentRequest.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects when the order is refunded", async () => {
+    vi.mocked(db.customPaymentRequest.findUnique).mockResolvedValue(pendingRequest("paypal", "19.00", "refunded"));
+
+    await expect(
+      caller.orders.markCustomPaymentReceived({ requestId: "req-1" })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    expect(db.customPaymentRequest.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects when the request doesn't exist", async () => {
+    vi.mocked(db.customPaymentRequest.findUnique).mockResolvedValue(null);
+
+    await expect(
+      caller.orders.markCustomPaymentReceived({ requestId: "missing" })
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 });

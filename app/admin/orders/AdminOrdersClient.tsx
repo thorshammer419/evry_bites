@@ -500,6 +500,10 @@ function OrderRow({ order }: { order: OrderWithItems }) {
     onSuccess: () => { utils.orders.listAll.invalidate(); setShowCustomPaymentModal(false); setCustomPaymentSent(true); },
   });
 
+  const markReceived = trpc.orders.markCustomPaymentReceived.useMutation({
+    onSuccess: () => { utils.orders.listAll.invalidate(); },
+  });
+
   const total = Number(order.totalAmount);
   const collected = order.cashCollected !== null && order.cashCollected !== undefined
     ? Number(order.cashCollected)
@@ -516,7 +520,7 @@ function OrderRow({ order }: { order: OrderWithItems }) {
   const next = nextStatus(order);
   const prev = previousStatus(order);
   const ref = order.id.slice(0, 8).toUpperCase();
-  const isMutating = updateStatus.isPending || cancelOrder.isPending || changePayment.isPending || adminSetStatus.isPending || logCash.isPending || requestRemainingBalance.isPending;
+  const isMutating = updateStatus.isPending || cancelOrder.isPending || changePayment.isPending || adminSetStatus.isPending || logCash.isPending || requestRemainingBalance.isPending || markReceived.isPending;
 
   const date = new Date(order.createdAt).toLocaleDateString("en-US", {
     month: "short", day: "numeric", year: "numeric",
@@ -594,9 +598,20 @@ function OrderRow({ order }: { order: OrderWithItems }) {
               <div className="mt-2 space-y-1">
                 <p className="text-xs font-semibold text-sky-500 uppercase tracking-wide">Payment Requests</p>
                 {order.customPaymentRequests.map((r) => (
-                  <div key={r.id} className={`flex justify-between text-sm ${r.paid ? "text-emerald-700" : "text-sky-500"}`}>
+                  <div key={r.id} className={`flex items-center justify-between text-sm ${r.paid ? "text-emerald-700" : "text-sky-500"}`}>
                     <span>{r.channel === "venmo" ? "Venmo" : "PayPal"} · {r.paid ? "Paid" : "Pending"}</span>
-                    <span className={r.paid ? "font-medium" : ""}>${Number(r.amount).toFixed(2)}</span>
+                    <span className="flex items-center gap-2">
+                      <span className={r.paid ? "font-medium" : ""}>${Number(r.amount).toFixed(2)}</span>
+                      {!r.paid && !isCancelledOrRefunded(order.status) && (
+                        <button
+                          onClick={() => markReceived.mutate({ requestId: r.id })}
+                          disabled={isMutating}
+                          className="text-xs px-2 py-1 rounded-lg border border-emerald-300 text-emerald-700 font-medium hover:bg-emerald-50 transition-colors disabled:opacity-60"
+                        >
+                          {markReceived.isPending ? "Marking..." : "Mark Received"}
+                        </button>
+                      )}
+                    </span>
                   </div>
                 ))}
                 {paidCustomPayments.length > 1 && (
