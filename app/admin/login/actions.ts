@@ -9,10 +9,39 @@ import {
   isAllowedPhone,
   generateVerificationCode,
   isCodeExpired,
+  hasAttemptsRemaining,
+  canRequestNewCode,
 } from "../../../lib/two-factor";
 
 const PHONE_COOKIE = "admin_2fa_phone";
 const CODE_LIFETIME_MS = 10 * 60 * 1000;
+
+type CookieStore = Awaited<ReturnType<typeof cookies>>;
+
+function setPhoneCookie(cookieStore: CookieStore, phone: string) {
+  cookieStore.set(PHONE_COOKIE, phone, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: CODE_LIFETIME_MS / 1000,
+    path: "/",
+  });
+}
+
+async function issueCodeFor(phone: string) {
+  const code = generateVerificationCode();
+  await db.adminVerificationCode.create({
+    data: {
+      phone,
+      code,
+      expiresAt: new Date(Date.now() + CODE_LIFETIME_MS),
+    },
+  });
+
+  sendVerificationCodeSms(phone, code).catch((err) =>
+    console.error("[admin-login] verification code SMS failed:", err)
+  );
+}
 
 export async function loginAction(formData: FormData) {
   const password = formData.get("password") as string;
@@ -31,29 +60,35 @@ export async function loginAction(formData: FormData) {
     redirect("/admin/login?error=phone_not_allowed");
   }
 
-  const code = generateVerificationCode();
-  await db.adminVerificationCode.create({
-    data: {
-      phone,
-      code,
-      expiresAt: new Date(Date.now() + CODE_LIFETIME_MS),
-    },
-  });
-
-  sendVerificationCodeSms(phone, code).catch((err) =>
-    console.error("[admin-login] verification code SMS failed:", err)
-  );
+  await issueCodeFor(phone);
 
   const cookieStore = await cookies();
-  cookieStore.set(PHONE_COOKIE, phone, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    maxAge: CODE_LIFETIME_MS / 1000,
-    path: "/",
-  });
+  setPhoneCookie(cookieStore, phone);
 
   redirect("/admin/login");
+}
+
+export async function resendCodeAction() {
+  const cookieStore = await cookies();
+  const phone = cookieStore.get(PHONE_COOKIE)?.value;
+
+  if (!phone) {
+    redirect("/admin/login?error=no_pending_code");
+  }
+
+  const lastCode = await db.adminVerificationCode.findFirst({
+    where: { phone },
+    orderBy: { createdAt: "desc" },
+  });
+
+  if (lastCode && !canRequestNewCode(lastCode.createdAt, new Date())) {
+    redirect("/admin/login?error=resend_throttled");
+  }
+
+  await issueCodeFor(phone);
+  setPhoneCookie(cookieStore, phone);
+
+  redirect("/admin/login?resent=1");
 }
 
 export async function verifyCodeAction(formData: FormData) {
@@ -70,12 +105,24 @@ export async function verifyCodeAction(formData: FormData) {
     orderBy: { createdAt: "desc" },
   });
 
-  if (
-    !record ||
-    isCodeExpired(record.expiresAt, new Date()) ||
-    record.code !== submittedCode
-  ) {
-    redirect("/admin/login?error=code");
+  if (!record) {
+    redirect("/admin/login?error=code_not_found");
+  }
+
+  if (!hasAttemptsRemaining(record.attempts)) {
+    redirect("/admin/login?error=code_locked");
+  }
+
+  if (isCodeExpired(record.expiresAt, new Date())) {
+    redirect("/admin/login?error=code_expired");
+  }
+
+  if (record.code !== submittedCode) {
+    await db.adminVerificationCode.update({
+      where: { id: record.id },
+      data: { attempts: { increment: 1 } },
+    });
+    redirect("/admin/login?error=code_wrong");
   }
 
   await db.adminVerificationCode.update({

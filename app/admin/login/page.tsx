@@ -1,22 +1,27 @@
 import { cookies } from "next/headers";
 import Image from "next/image";
-import { loginAction, verifyCodeAction } from "./actions";
+import { loginAction, verifyCodeAction, resendCodeAction } from "./actions";
 
 const ERROR_MESSAGES: Record<string, string> = {
   password: "Incorrect password. Please try again.",
   phone_format: "That doesn't look like a valid phone number.",
   phone_not_allowed: "That phone number isn't recognized.",
   no_pending_code: "Your verification session expired. Please sign in again.",
-  code: "Incorrect or expired code. Please try again.",
+  code_not_found: "We couldn't find a pending code. Please request a new one.",
+  code_wrong: "Incorrect code. Please try again.",
+  code_expired: "That code has expired. Request a new one below.",
+  code_locked: "Too many incorrect attempts. Request a new code below.",
+  resend_throttled: "Please wait a bit before requesting another code.",
 };
 
 interface LoginPageProps {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; resent?: string }>;
 }
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   const params = await searchParams;
   const errorMessage = params.error ? ERROR_MESSAGES[params.error] : null;
+  const justResent = params.resent === "1";
 
   const cookieStore = await cookies();
   const pendingPhone = cookieStore.get("admin_2fa_phone")?.value;
@@ -42,6 +47,12 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             {errorMessage && (
               <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
                 {errorMessage}
+              </div>
+            )}
+
+            {!errorMessage && justResent && (
+              <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm text-emerald-700">
+                A new code has been sent.
               </div>
             )}
 
@@ -71,6 +82,14 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
               className="w-full bg-blue-900 text-white px-4 py-3 rounded-xl font-semibold hover:bg-blue-800 active:bg-blue-950 transition-colors"
             >
               Verify
+            </button>
+
+            <button
+              formAction={resendCodeAction}
+              formNoValidate
+              className="w-full border border-sky-200 text-blue-700 px-4 py-2.5 rounded-xl font-medium text-sm hover:bg-sky-50 transition-colors"
+            >
+              Resend code
             </button>
           </form>
         ) : (
