@@ -4,8 +4,8 @@ import { loginAction, verifyCodeAction, resendCodeAction } from "./actions";
 
 const ERROR_MESSAGES: Record<string, string> = {
   password: "Incorrect password. Please try again.",
-  phone_format: "That doesn't look like a valid phone number.",
-  phone_not_allowed: "That phone number isn't recognized.",
+  email_format: "That doesn't look like a valid email address.",
+  email_not_allowed: "That email address isn't recognized.",
   no_pending_code: "Your verification session expired. Please sign in again.",
   code_not_found: "We couldn't find a pending code. Please request a new one.",
   code_wrong: "Incorrect code. Please try again.",
@@ -24,7 +24,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const justResent = params.resent === "1";
 
   const cookieStore = await cookies();
-  const pendingPhone = cookieStore.get("admin_2fa_phone")?.value;
+  const pendingEmail = cookieStore.get("admin_2fa_email")?.value;
 
   return (
     <div className="min-h-screen bg-sky-50 flex items-center justify-center px-4">
@@ -35,11 +35,11 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             EvryBites Admin
           </h1>
           <p className="text-sm text-blue-600 mt-1">
-            {pendingPhone ? "Enter the code we texted you" : "Enter your password to continue"}
+            {pendingEmail ? "Enter the code we emailed you" : "Enter your password to continue"}
           </p>
         </div>
 
-        {pendingPhone ? (
+        {pendingEmail ? (
           <form
             action={verifyCodeAction}
             className="bg-white rounded-3xl shadow-sm border border-sky-100 p-6 space-y-4"
@@ -123,18 +123,18 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
             <div>
               <label
-                htmlFor="phone"
+                htmlFor="email"
                 className="block text-sm font-medium text-blue-900 mb-2"
               >
-                Phone number
+                Email address
               </label>
               <input
-                id="phone"
-                name="phone"
-                type="tel"
+                id="email"
+                name="email"
+                type="email"
                 required
                 className="w-full rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-blue-900 placeholder-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-transparent"
-                placeholder="605-555-1234"
+                placeholder="you@evrybites.com"
               />
             </div>
 

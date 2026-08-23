@@ -52,7 +52,7 @@ export default async function OrderConfirmationPage({
             Order #{order.id.slice(0, 8).toUpperCase()}
           </p>
           <p className="text-sm text-green-700 mt-1">
-            A confirmation email and text message will be sent shortly.
+            A confirmation email will be sent shortly.
           </p>
         </div>
 

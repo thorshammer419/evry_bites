@@ -1,36 +1,36 @@
 import { describe, it, expect } from "vitest";
 import {
-  isAllowedPhone,
+  isAllowedEmail,
   generateVerificationCode,
   isCodeExpired,
   hasAttemptsRemaining,
   canRequestNewCode,
 } from "./two-factor";
 
-describe("isAllowedPhone", () => {
+describe("isAllowedEmail", () => {
   it("matches an exact entry in the allowlist", () => {
-    expect(isAllowedPhone("+16055551234", "+16055551234,+16055555678")).toBe(true);
+    expect(isAllowedEmail("owner@evrybites.com", "owner@evrybites.com,staff@evrybites.com")).toBe(true);
   });
 
-  it("returns false for a number not on the allowlist", () => {
-    expect(isAllowedPhone("+16055559999", "+16055551234,+16055555678")).toBe(false);
+  it("returns false for an email not on the allowlist", () => {
+    expect(isAllowedEmail("stranger@example.com", "owner@evrybites.com,staff@evrybites.com")).toBe(false);
   });
 
-  it("ignores spaces and dashes when comparing", () => {
-    expect(isAllowedPhone("+1 605-555-1234", "+16055551234")).toBe(true);
-    expect(isAllowedPhone("+16055551234", "+1 605-555-1234")).toBe(true);
+  it("is case-insensitive", () => {
+    expect(isAllowedEmail("Owner@EvryBites.com", "owner@evrybites.com")).toBe(true);
+    expect(isAllowedEmail("owner@evrybites.com", "Owner@EvryBites.com")).toBe(true);
   });
 
   it("ignores surrounding whitespace on allowlist entries", () => {
-    expect(isAllowedPhone("+16055551234", " +16055551234 , +16055555678 ")).toBe(true);
+    expect(isAllowedEmail("owner@evrybites.com", " owner@evrybites.com , staff@evrybites.com ")).toBe(true);
   });
 
   it("returns false for an empty allowlist", () => {
-    expect(isAllowedPhone("+16055551234", "")).toBe(false);
+    expect(isAllowedEmail("owner@evrybites.com", "")).toBe(false);
   });
 
-  it("returns false for an empty phone number", () => {
-    expect(isAllowedPhone("", "+16055551234")).toBe(false);
+  it("returns false for an empty email", () => {
+    expect(isAllowedEmail("", "owner@evrybites.com")).toBe(false);
   });
 });
 

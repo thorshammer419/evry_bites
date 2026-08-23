@@ -1,17 +1,17 @@
 const ATTEMPT_CAP = 5;
 const RESEND_THROTTLE_MS = 60_000;
 
-function normalizePhone(phone: string): string {
-  return phone.replace(/[^\d+]/g, "");
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
 }
 
-export function isAllowedPhone(phone: string, allowlist: string): boolean {
-  const normalized = normalizePhone(phone);
+export function isAllowedEmail(email: string, allowlist: string): boolean {
+  const normalized = normalizeEmail(email);
   if (!normalized) return false;
 
   const entries = allowlist
     .split(",")
-    .map((entry) => normalizePhone(entry.trim()))
+    .map((entry) => normalizeEmail(entry))
     .filter(Boolean);
 
   return entries.includes(normalized);

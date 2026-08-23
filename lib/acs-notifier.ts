@@ -6,30 +6,24 @@ import type {
   OrderReceivedForNotification,
 } from "./notifier";
 
-export function toE164(phone: string): string | null {
-  const digits = phone.replace(/\D/g, "");
-  if (digits.length === 10) return `+1${digits}`;
-  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
-  return null;
-}
-
-// Standalone SMS send, independent of the Notifier/OrderEvent abstraction —
+// Standalone email send, independent of the Notifier/OrderEvent abstraction —
 // admin login verification codes aren't order events.
-// phone must already be E.164-normalized (see toE164) — the caller validates
-// and normalizes at the point of collecting user input, this just sends.
-export async function sendVerificationCodeSms(phone: string, code: string): Promise<void> {
+export async function sendVerificationCodeEmail(email: string, code: string): Promise<void> {
   const connectionString = process.env.ACS_CONNECTION_STRING;
-  const fromPhone = process.env.ACS_FROM_PHONE;
-  if (!connectionString || !fromPhone) {
-    console.log("[notifications] ACS not configured — skipping verification code SMS");
+  const fromEmail = process.env.ACS_FROM_EMAIL;
+  if (!connectionString || !fromEmail) {
+    console.log("[notifications] ACS not configured — skipping verification code email");
     return;
   }
 
-  const { SmsClient } = await import("@azure/communication-sms");
-  await new SmsClient(connectionString).send({
-    from: fromPhone,
-    to: [phone],
-    message: `EvryBites admin verification code: ${code}. Expires in 10 minutes.`,
+  const { EmailClient } = await import("@azure/communication-email");
+  await new EmailClient(connectionString).beginSend({
+    senderAddress: fromEmail,
+    recipients: { to: [{ address: email }] },
+    content: {
+      subject: "EvryBites admin verification code",
+      plainText: `Your EvryBites admin verification code: ${code}. Expires in 10 minutes.`,
+    },
   });
 }
 
@@ -43,7 +37,7 @@ function getStatusMessage(
   order: OrderForNotification,
   newStatus: OrderStatus,
   reason?: string
-): { subject: string; body: string; sms: string } {
+): { subject: string; body: string } {
   const ref = order.id.slice(0, 8).toUpperCase();
   const total = `$${Number(order.totalAmount).toFixed(2)}`;
   const name = customerName(order);
@@ -53,44 +47,37 @@ function getStatusMessage(
       return {
         subject: `EvryBites Order #${ref} — Received!`,
         body: `Hi ${name},\n\nYour EvryBites order (#${ref}) has been received and is being confirmed. We'll be in touch shortly!\n\nTotal: ${total}\n\nThanks for ordering!`,
-        sms: `EvryBites: Your order #${ref} has been received! Total: ${total}. We'll confirm shortly.`,
       };
     case "processing":
       return {
         subject: `EvryBites Order #${ref} — Being Prepared!`,
         body: `Hi ${name},\n\nGreat news! Your EvryBites order (#${ref}) is now being prepared. We'll reach out again when it's ready.\n\nTotal: ${total}\n\nThanks for ordering!`,
-        sms: `EvryBites: Your order #${ref} is being prepared! Total: ${total}`,
       };
     case "ready":
       return order.fulfillmentType === "local_delivery"
         ? {
             subject: `EvryBites Order #${ref} — Ready for Delivery!`,
             body: `Hi ${name},\n\nGreat news! Your order (#${ref}) is ready and on its way to you.\n\nTotal: ${total}`,
-            sms: `EvryBites: Your order #${ref} is ready and out for delivery! Total: ${total}`,
           }
         : {
             subject: `EvryBites Order #${ref} — Ready to Ship!`,
             body: `Hi ${name},\n\nYour order (#${ref}) is packed and ready to ship! You'll receive tracking info shortly.\n\nTotal: ${total}`,
-            sms: `EvryBites: Your order #${ref} is packed and ready to ship! Total: ${total}`,
           };
     case "delivered":
       return {
         subject: `EvryBites Order #${ref} — Delivered!`,
         body: `Hi ${name},\n\nYour order (#${ref}) has been delivered. We hope you enjoy every bite!\n\nTotal: ${total}`,
-        sms: `EvryBites: Your order #${ref} has been delivered. Enjoy!`,
       };
     case "shipped":
       return {
         subject: `EvryBites Order #${ref} — Shipped!`,
         body: `Hi ${name},\n\nYour order (#${ref}) is on its way! Check your email for tracking information.\n\nTotal: ${total}`,
-        sms: `EvryBites: Your order #${ref} has shipped! Check email for tracking.`,
       };
     case "cancelled": {
       const reasonLine = reason ? `\n\nReason: ${reason}` : "";
       return {
         subject: `EvryBites Order #${ref} — Cancelled`,
         body: `Hi ${name},\n\nYour EvryBites order (#${ref}) has been cancelled.${reasonLine}\n\nIf you have any questions, please reach out.\n\nTotal that will not be charged: ${total}`,
-        sms: `EvryBites: Your order #${ref} has been cancelled.${reason ? ` Reason: ${reason}` : ""}`,
       };
     }
     case "refunded": {
@@ -98,7 +85,6 @@ function getStatusMessage(
       return {
         subject: `EvryBites Order #${ref} — Refunded`,
         body: `Hi ${name},\n\nYour EvryBites order (#${ref}) has been refunded.${reasonLine}\n\nYour refund should appear within 3–5 business days depending on your payment method. If you have any questions, please reach out.\n\nRefund amount: ${total}`,
-        sms: `EvryBites: Your order #${ref} has been refunded. Amount: ${total}.`,
       };
     }
     default:
@@ -149,7 +135,6 @@ export class AcsNotifier implements Notifier {
     connectionString: string
   ): Promise<void> {
     const fromEmail = process.env.ACS_FROM_EMAIL;
-    const fromPhone = process.env.ACS_FROM_PHONE;
     const ownerEmails = (process.env.OWNER_NOTIFICATION_EMAIL ?? "")
       .split(",")
       .map((e) => e.trim())
@@ -167,13 +152,11 @@ export class AcsNotifier implements Notifier {
 
     const customerSubject = `EvryBites — Order #${ref} Received!`;
     const customerBody = `Hi ${name},\n\nThank you for your order! We've received it and will confirm soon.\n\nOrder #${ref}\n\n${itemsList}\n\nTotal: ${total}\n\nWe'll reach out to confirm your order shortly. Thank you for supporting EvryBites!`;
-    const customerSms = `EvryBites: Order #${ref} received! Total: ${total}. We'll confirm shortly.`;
 
     const ownerSubject = `New EvryBites Order #${ref} from ${name}`;
     const ownerBody = `New order received!\n\nOrder #${ref}\nCustomer: ${name}\nEmail: ${order.customerEmail}\nPhone: ${order.customerPhone}\nFulfillment: ${order.fulfillmentType}\nPayment: ${order.paymentMethod}\n\nItems:\n${itemsList}\n\nTotal: ${total}`;
 
     const { EmailClient } = await import("@azure/communication-email");
-    const { SmsClient } = await import("@azure/communication-sms");
 
     const results = await Promise.allSettled([
       fromEmail
@@ -182,15 +165,6 @@ export class AcsNotifier implements Notifier {
             recipients: { to: [{ address: order.customerEmail }] },
             content: { subject: customerSubject, plainText: customerBody },
           })
-        : Promise.resolve(),
-
-      fromPhone && order.customerPhone
-        ? (() => {
-            const to = toE164(order.customerPhone);
-            return to
-              ? new SmsClient(connectionString).send({ from: fromPhone, to: [to], message: customerSms })
-              : Promise.reject(new Error(`Cannot normalize phone to E.164: ${order.customerPhone}`));
-          })()
         : Promise.resolve(),
 
       fromEmail && ownerEmails.length > 0
@@ -214,7 +188,6 @@ export class AcsNotifier implements Notifier {
     connectionString: string
   ): Promise<void> {
     const fromEmail = process.env.ACS_FROM_EMAIL;
-    const fromPhone = process.env.ACS_FROM_PHONE;
     const ownerEmails = (process.env.OWNER_NOTIFICATION_EMAIL ?? "")
       .split(",")
       .map((e) => e.trim())
@@ -243,13 +216,11 @@ export class AcsNotifier implements Notifier {
       "",
       "Your order is confirmed and we'll be in touch soon. Thank you for supporting EvryBites!",
     ].join("\n");
-    const customerSms = `EvryBites: Payment of ${total} received for order #${ref}. Thank you!`;
 
     const ownerSubject = `EvryBites — Payment Received for Order #${ref} from ${name}`;
     const ownerBody = `Payment received!\n\nOrder #${ref}\nCustomer: ${name}\nEmail: ${order.customerEmail}\nPhone: ${order.customerPhone}\nFulfillment: ${order.fulfillmentType}\nPayment: ${order.paymentMethod}\n\nItems:\n${itemsList}\n\nTotal: ${total}`;
 
     const { EmailClient } = await import("@azure/communication-email");
-    const { SmsClient } = await import("@azure/communication-sms");
 
     const results = await Promise.allSettled([
       fromEmail
@@ -258,15 +229,6 @@ export class AcsNotifier implements Notifier {
             recipients: { to: [{ address: order.customerEmail }] },
             content: { subject: customerSubject, plainText: customerBody },
           })
-        : Promise.resolve(),
-
-      fromPhone && order.customerPhone
-        ? (() => {
-            const to = toE164(order.customerPhone);
-            return to
-              ? new SmsClient(connectionString).send({ from: fromPhone, to: [to], message: customerSms })
-              : Promise.reject(new Error(`Cannot normalize phone to E.164: ${order.customerPhone}`));
-          })()
         : Promise.resolve(),
 
       fromEmail && ownerEmails.length > 0
@@ -605,12 +567,10 @@ export class AcsNotifier implements Notifier {
     reason?: string
   ): Promise<void> {
     const fromEmail = process.env.ACS_FROM_EMAIL;
-    const fromPhone = process.env.ACS_FROM_PHONE;
 
-    const { subject, body, sms } = getStatusMessage(order, newStatus, reason);
+    const { subject, body } = getStatusMessage(order, newStatus, reason);
 
     const { EmailClient } = await import("@azure/communication-email");
-    const { SmsClient } = await import("@azure/communication-sms");
 
     const results = await Promise.allSettled([
       fromEmail
@@ -619,15 +579,6 @@ export class AcsNotifier implements Notifier {
             recipients: { to: [{ address: order.customerEmail }] },
             content: { subject, plainText: body },
           })
-        : Promise.resolve(),
-
-      fromPhone && order.customerPhone
-        ? (() => {
-            const to = toE164(order.customerPhone);
-            return to
-              ? new SmsClient(connectionString).send({ from: fromPhone, to: [to], message: sms })
-              : Promise.reject(new Error(`Cannot normalize phone to E.164: ${order.customerPhone}`));
-          })()
         : Promise.resolve(),
     ]);
 

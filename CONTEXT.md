@@ -66,8 +66,8 @@ An Order's total minus its Cash Collected minus its paid Custom Payment Requests
 
 ## Admin Session
 
-Access to `/admin/*`. There is no per-person admin account — a single shared password, plus a Verification Code texted to a phone number checked against a fixed allowlist, together grant one shared session. Distinct from a Customer's account (Clerk-based, used only on the customer-facing order flow).
+Access to `/admin/*`. There is no per-person admin account — a single shared password, plus a Verification Code emailed to an address checked against a fixed allowlist, together grant one shared session. Distinct from a Customer's account (Clerk-based, used only on the customer-facing order flow).
 
 ## Verification Code
 
-A 6-digit, single-use, time-limited code sent by SMS to a phone number the owner typed in after the shared password succeeded — the second factor of an Admin Session. Expires after 10 minutes or 5 wrong attempts, whichever comes first; a fresh one can be requested no more than once per minute per phone number. Never tied to a stored identity — the phone number is checked against the allowlist at request time, not stored as "who logged in."
+A 6-digit, single-use, time-limited code emailed to an address the owner typed in after the shared password succeeded — the second factor of an Admin Session. Expires after 10 minutes or 5 wrong attempts, whichever comes first; a fresh one can be requested no more than once per minute per email address. Never tied to a stored identity — the email address is checked against the allowlist at request time, not stored as "who logged in." SMS is not used anywhere in this app.

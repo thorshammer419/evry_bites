@@ -99,7 +99,7 @@ model OrderItem {
 
 model AdminVerificationCode {
   id        String   @id @default(cuid())
-  phone     String
+  email     String
   code      String
   expiresAt DateTime
   attempts  Int      @default(0)

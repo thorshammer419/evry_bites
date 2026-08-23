@@ -119,12 +119,9 @@ az communication list-key \
 3. Copy the verified sender address (e.g. `DoNotReply@<hash>.azurecomm.net` or `orders@orders.evrybites.com`)
 4. Add as `ACS_FROM_EMAIL` in App Service settings
 
-### 4b. SMS — provision a phone number
-
-1. Azure Portal → Communication Services → Phone Numbers → Get a number
-2. Choose United States, toll-free, SMS-capable
-3. Copy the provisioned number (e.g. `+18885551234`)
-4. Add as `ACS_FROM_PHONE` in App Service settings
+SMS is not used by this app — all customer and admin notifications, including
+the admin 2FA verification code, are sent by email only. No phone number
+needs to be provisioned in Communication Services.
 
 ---
 
@@ -171,12 +168,10 @@ az webapp config appsettings set \
     ADMIN_PASSWORD="<STRONG_PASSWORD>" \
     ACS_CONNECTION_STRING="<FROM_STEP_4>" \
     ACS_FROM_EMAIL="<FROM_STEP_4a>" \
-    ACS_FROM_PHONE="<FROM_STEP_4b>" \
     AZURE_STORAGE_CONNECTION_STRING="<FROM_STEP_5>" \
     AZURE_STORAGE_CONTAINER_NAME="product-images" \
     OWNER_NOTIFICATION_EMAIL="orders@evrybites.com" \
-    OWNER_NOTIFICATION_PHONE="<YOUR_CELL>" \
-    ADMIN_TRUSTED_PHONES="<COMMA_SEPARATED_ADMIN_CELL_NUMBERS>" \
+    ADMIN_TRUSTED_EMAILS="<COMMA_SEPARATED_ADMIN_EMAILS>" \
     VENMO_HANDLE="<YOUR_VENMO>" \
     PAYPAL_LINK="<YOUR_PAYPAL_LINK>" \
     NEXT_PUBLIC_VENMO_HANDLE="<YOUR_VENMO>" \
@@ -245,11 +240,10 @@ ACS endpoint: `https://evry-bites-acs.unitedstates.communication.azure.com`
 ## Remaining Manual Steps
 
 - [ ] **ACS email domain** — In Azure Portal → evry-bites-acs → Email → Domains → Add domain; set `ACS_FROM_EMAIL` App Setting
-- [ ] **ACS SMS phone number** — In Azure Portal → evry-bites-acs → Phone Numbers → Get a number; set `ACS_FROM_PHONE` App Setting
 - [ ] **Cloudflare DNS** — Add CNAME `@` and `www` → `evry-bites.azurewebsites.net` with proxy on; set SSL mode to Full
 - [ ] **Azure custom domain** — In App Service → Custom domains → Add `evrybites.com` and `www.evrybites.com`
 - [ ] **Cloudflare Email Routing** — Enable and add `orders@evrybites.com` → owner inbox
-- [ ] **Payment settings** — Set `NEXT_PUBLIC_VENMO_HANDLE`, `NEXT_PUBLIC_PAYPAL_LINK`, `OWNER_NOTIFICATION_PHONE` App Settings
+- [ ] **Payment settings** — Set `NEXT_PUBLIC_VENMO_HANDLE`, `NEXT_PUBLIC_PAYPAL_LINK` App Settings
 - [ ] **ADMIN_PASSWORD** — Change from `changeme` to a strong password in App Settings
 - [ ] **Run migrations** — `DATABASE_URL="postgresql://evrybites:<pwd>@evry-bites-db.postgres.database.azure.com/evry_bites?sslmode=require" npx prisma migrate deploy`
 - [ ] **Deploy app** — Set up CI/CD or run `az webapp deploy`

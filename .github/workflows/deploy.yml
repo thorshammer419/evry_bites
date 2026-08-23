@@ -77,5 +77,5 @@ jobs:
               WEBSITES_PORT=3000 \
               PAYPAL_CLIENT_ID="${{ secrets.PAYPAL_CLIENT_ID }}" \
               PAYPAL_CLIENT_SECRET="${{ secrets.PAYPAL_CLIENT_SECRET }}" \
-              ADMIN_TRUSTED_PHONES="${{ secrets.ADMIN_TRUSTED_PHONES }}"
+              ADMIN_TRUSTED_EMAILS="${{ secrets.ADMIN_TRUSTED_EMAILS }}"
           az webapp restart --name evry-bites --resource-group evry-bites-rg

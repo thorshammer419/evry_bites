@@ -27,7 +27,7 @@ export default function TermsPage() {
         <div className="bg-white rounded-3xl shadow-sm border border-amber-100 p-6 space-y-6">
           <div>
             <h2 className="text-2xl font-bold text-amber-900 mb-1">Terms &amp; Conditions</h2>
-            <p className="text-xs text-amber-500">Last updated: June 15, 2025</p>
+            <p className="text-xs text-amber-500">Last updated: August 23, 2026</p>
           </div>
 
           <section className="space-y-2">
@@ -65,15 +65,6 @@ export default function TermsPage() {
               allergens including wheat, eggs, dairy, nuts, and soy. We cannot
               guarantee an allergen-free environment. Please contact us before
               ordering if you have serious food allergies.
-            </p>
-          </section>
-
-          <section className="space-y-2">
-            <h3 className="font-semibold text-amber-900">SMS Communications</h3>
-            <p className="text-sm text-amber-800 leading-relaxed">
-              By providing your phone number, you agree to receive transactional
-              SMS notifications related to your order. Message and data rates may
-              apply. Reply STOP to opt out.
             </p>
           </section>
 
