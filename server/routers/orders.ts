@@ -610,6 +610,7 @@ export const ordersRouter = router({
     .input(z.object({
       id: z.string(),
       newPaymentMethod: z.enum(["venmo", "paypal", "cash", "check"]),
+      email: z.string().email().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const existing = await db.order.findUniqueOrThrow({
@@ -661,16 +662,20 @@ export const ordersRouter = router({
 
       const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://evrybites.com";
 
+      // A one-time override for where this request's notification goes —
+      // never persisted, the order's own customerEmail is untouched.
+      const recipientOrder = input.email ? { ...updated, customerEmail: input.email } : updated;
+
       if (input.newPaymentMethod === "venmo") {
         ctx.notifier
-          .notify({ type: "order.venmo_payment_requested", order: updated })
+          .notify({ type: "order.venmo_payment_requested", order: recipientOrder })
           .catch((err) => console.error("[orders] venmo-payment-email failed:", err));
       }
 
       if (input.newPaymentMethod === "paypal") {
         const paymentUrl = `${baseUrl}/order/pay/${updated.id}`;
         ctx.notifier
-          .notify({ type: "order.paypal_payment_requested", order: updated, paymentUrl })
+          .notify({ type: "order.paypal_payment_requested", order: recipientOrder, paymentUrl })
           .catch((err) => console.error("[orders] paypal-payment-email failed:", err));
       }
 
@@ -858,6 +863,7 @@ export const ordersRouter = router({
       orderId: z.string(),
       channel: z.enum(["paypal", "venmo"]),
       amount: z.number().positive(),
+      email: z.string().email().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const order = await db.order.findUnique({
@@ -881,12 +887,16 @@ export const ordersRouter = router({
         data: { orderId: input.orderId, amount: input.amount, channel: input.channel },
       });
 
+      // A one-time override for where this request's notification goes —
+      // never persisted, the order's own customerEmail is untouched.
+      const recipientOrder = input.email ? { ...order, customerEmail: input.email } : order;
+
       if (input.channel === "venmo") {
         const venmoHandle = process.env.VENMO_HANDLE ?? "@evrybites";
         const note = encodeURIComponent(`Order #${order.id.slice(0, 8).toUpperCase()}`);
         const venmoUrl = `https://venmo.com/${venmoHandle.replace("@", "")}?txn=pay&amount=${input.amount.toFixed(2)}&note=${note}`;
         ctx.notifier
-          .notify({ type: "order.custom_payment_requested", order, amount: input.amount, paymentUrl: venmoUrl, paymentType: "venmo" })
+          .notify({ type: "order.custom_payment_requested", order: recipientOrder, amount: input.amount, paymentUrl: venmoUrl, paymentType: "venmo" })
           .catch((err) => console.error("[orders] custom-venmo-link notification failed:", err));
         return { requestId: request.id };
       }
@@ -894,7 +904,7 @@ export const ordersRouter = router({
       const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://evrybites.com";
       const paymentUrl = `${baseUrl}/order/pay/custom/${request.id}`;
       ctx.notifier
-        .notify({ type: "order.custom_payment_requested", order, amount: input.amount, paymentUrl, paymentType: "paypal" })
+        .notify({ type: "order.custom_payment_requested", order: recipientOrder, amount: input.amount, paymentUrl, paymentType: "paypal" })
         .catch((err) => console.error("[orders] custom-paypal-link notification failed:", err));
       return { requestId: request.id };
     }),

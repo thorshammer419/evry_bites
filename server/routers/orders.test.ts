@@ -379,6 +379,66 @@ describe("orders.requestRemainingBalance", () => {
     expect(db.order.update).not.toHaveBeenCalled();
   });
 
+  it("sends to the order's registered email by default", async () => {
+    vi.mocked(db.order.findUnique).mockResolvedValue(cashOrder);
+    vi.mocked(db.customPaymentRequest.create).mockResolvedValue({
+      id: "req-default-email",
+      orderId: "order-123",
+      amount: "19.00" as never,
+      channel: "paypal",
+      paypalOrderId: null,
+      paypalCaptureId: null,
+      paid: false,
+      createdAt: new Date(),
+    });
+
+    await caller.orders.requestRemainingBalance({ orderId: "order-123", channel: "paypal", amount: 19 });
+
+    expect(mockNotify).toHaveBeenCalledWith(
+      expect.objectContaining({ order: expect.objectContaining({ customerEmail: "jane@example.com" }) })
+    );
+  });
+
+  it("sends to an override email when provided, without touching the order record", async () => {
+    vi.mocked(db.order.findUnique).mockResolvedValue(cashOrder);
+    vi.mocked(db.customPaymentRequest.create).mockResolvedValue({
+      id: "req-override-email",
+      orderId: "order-123",
+      amount: "19.00" as never,
+      channel: "paypal",
+      paypalOrderId: null,
+      paypalCaptureId: null,
+      paid: false,
+      createdAt: new Date(),
+    });
+
+    await caller.orders.requestRemainingBalance({
+      orderId: "order-123",
+      channel: "paypal",
+      amount: 19,
+      email: "different@example.com",
+    });
+
+    expect(mockNotify).toHaveBeenCalledWith(
+      expect.objectContaining({ order: expect.objectContaining({ customerEmail: "different@example.com" }) })
+    );
+    // The order's actual registered email is never touched.
+    expect(db.order.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects a malformed override email before ever reaching the handler", async () => {
+    await expect(
+      caller.orders.requestRemainingBalance({
+        orderId: "order-123",
+        channel: "paypal",
+        amount: 19,
+        email: "not-an-email",
+      })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    expect(db.customPaymentRequest.create).not.toHaveBeenCalled();
+  });
+
   it("works on an order already delivered, as long as a balance remains", async () => {
     vi.mocked(db.order.findUnique).mockResolvedValue({ ...cashOrder, status: "delivered" });
     vi.mocked(db.customPaymentRequest.create).mockResolvedValue({
@@ -753,6 +813,61 @@ describe("orders.changePaymentMethod", () => {
       expect.objectContaining({ type: "order.venmo_payment_requested" })
     );
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("sends the venmo payment request to an override email when provided", async () => {
+    const existing = orderWith({ paymentMethod: "cash", status: "received" });
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(existing);
+    vi.mocked(db.order.update).mockResolvedValue({ ...existing, paymentMethod: "venmo", status: "pending_payment" });
+
+    await caller.orders.changePaymentMethod({
+      id: "order-123",
+      newPaymentMethod: "venmo",
+      email: "different@example.com",
+    });
+
+    expect(mockNotify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "order.venmo_payment_requested",
+        order: expect.objectContaining({ customerEmail: "different@example.com" }),
+      })
+    );
+    // The override never leaks into what actually gets persisted.
+    const updateCall = vi.mocked(db.order.update).mock.calls[0][0];
+    expect(updateCall.data).not.toHaveProperty("customerEmail");
+  });
+
+  it("sends the paypal payment request to an override email when provided", async () => {
+    const existing = orderWith({ paymentMethod: "cash", status: "received" });
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(existing);
+    vi.mocked(db.order.update).mockResolvedValue({ ...existing, paymentMethod: "paypal", status: "pending_payment" });
+
+    await caller.orders.changePaymentMethod({
+      id: "order-123",
+      newPaymentMethod: "paypal",
+      email: "different@example.com",
+    });
+
+    expect(mockNotify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "order.paypal_payment_requested",
+        order: expect.objectContaining({ customerEmail: "different@example.com" }),
+      })
+    );
+    const updateCall = vi.mocked(db.order.update).mock.calls[0][0];
+    expect(updateCall.data).not.toHaveProperty("customerEmail");
+  });
+
+  it("rejects a malformed override email before ever reaching the handler", async () => {
+    await expect(
+      caller.orders.changePaymentMethod({
+        id: "order-123",
+        newPaymentMethod: "venmo",
+        email: "not-an-email",
+      })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    expect(db.order.update).not.toHaveBeenCalled();
   });
 
   it("refunds the paypal capture before switching away from a paid PayPal checkout", async () => {

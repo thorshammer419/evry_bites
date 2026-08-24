@@ -384,15 +384,54 @@ function ManualStatusModal({ currentStatus, onConfirm, onClose, isPending }: {
   );
 }
 
-function ChangePaymentModal({ currentMethod, onConfirm, onClose, isPending }: {
+function EmailOverrideField({ defaultEmail, email, onChange }: {
+  defaultEmail: string;
+  email: string | null;
+  onChange: (email: string | null) => void;
+}) {
+  if (email === null) {
+    return (
+      <button
+        type="button"
+        onClick={() => onChange(defaultEmail)}
+        className="text-xs text-blue-600 hover:text-blue-800 underline mb-4 block"
+      >
+        Send to a different email
+      </button>
+    );
+  }
+
+  return (
+    <div className="mb-4">
+      <label className="block text-sm font-medium text-blue-900 mb-1">Send to</label>
+      <input
+        type="email"
+        value={email}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full border border-sky-200 rounded-xl px-3 py-2 text-sm text-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-300"
+      />
+      <button
+        type="button"
+        onClick={() => onChange(null)}
+        className="text-xs text-blue-600 hover:text-blue-800 underline mt-1"
+      >
+        Use order email instead
+      </button>
+    </div>
+  );
+}
+
+function ChangePaymentModal({ currentMethod, defaultEmail, onConfirm, onClose, isPending }: {
   currentMethod: PaymentMethod;
-  onConfirm: (method: PaymentMethod) => void;
+  defaultEmail: string;
+  onConfirm: (method: PaymentMethod, email?: string) => void;
   onClose: () => void;
   isPending: boolean;
 }) {
   const normalizedCurrent = currentMethod === "check" ? "cash" : currentMethod;
   const options = (["venmo", "paypal", "cash"] as PaymentMethod[]).filter((m) => m !== normalizedCurrent);
   const [selected, setSelected] = useState<PaymentMethod>(options[0]);
+  const [email, setEmail] = useState<string | null>(null);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
@@ -413,12 +452,13 @@ function ChangePaymentModal({ currentMethod, onConfirm, onClose, isPending }: {
             </label>
           ))}
         </div>
+        <EmailOverrideField defaultEmail={defaultEmail} email={email} onChange={setEmail} />
         <div className="flex gap-2">
           <button onClick={onClose} disabled={isPending}
             className="flex-1 border border-sky-200 text-blue-800 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-sky-50 transition-colors disabled:opacity-60">
             Cancel
           </button>
-          <button onClick={() => onConfirm(selected)} disabled={isPending}
+          <button onClick={() => onConfirm(selected, email ?? undefined)} disabled={isPending}
             className="flex-1 bg-blue-900 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-blue-800 transition-colors disabled:opacity-60">
             {isPending ? "Updating..." : "Confirm"}
           </button>
@@ -428,14 +468,16 @@ function ChangePaymentModal({ currentMethod, onConfirm, onClose, isPending }: {
   );
 }
 
-function RequestRemainingBalanceModal({ amountOwed, onConfirm, onClose, isPending }: {
+function RequestRemainingBalanceModal({ amountOwed, defaultEmail, onConfirm, onClose, isPending }: {
   amountOwed: number;
-  onConfirm: (channel: "paypal" | "venmo", amount: number) => void;
+  defaultEmail: string;
+  onConfirm: (channel: "paypal" | "venmo", amount: number, email?: string) => void;
   onClose: () => void;
   isPending: boolean;
 }) {
   const [channel, setChannel] = useState<"paypal" | "venmo">("paypal");
   const [rawAmount, setRawAmount] = useState(amountOwed.toFixed(2));
+  const [email, setEmail] = useState<string | null>(null);
   const parsed = parseFloat(rawAmount);
   const valid = !isNaN(parsed) && parsed > 0;
   const isVenmo = channel === "venmo";
@@ -471,12 +513,13 @@ function RequestRemainingBalanceModal({ amountOwed, onConfirm, onClose, isPendin
           onChange={(e) => setRawAmount(e.target.value)}
           className="w-full border border-sky-200 rounded-xl px-3 py-2 text-sm text-blue-900 mb-4 focus:outline-none focus:ring-2 focus:ring-blue-300"
         />
+        <EmailOverrideField defaultEmail={defaultEmail} email={email} onChange={setEmail} />
         <div className="flex gap-2">
           <button onClick={onClose} disabled={isPending}
             className="flex-1 border border-sky-200 text-blue-800 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-sky-50 transition-colors disabled:opacity-60">
             Cancel
           </button>
-          <button onClick={() => valid && onConfirm(channel, parsed)} disabled={isPending || !valid}
+          <button onClick={() => valid && onConfirm(channel, parsed, email ?? undefined)} disabled={isPending || !valid}
             className="flex-1 bg-blue-900 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-blue-800 transition-colors disabled:opacity-60">
             {isPending ? "Sending..." : "Send Link"}
           </button>
@@ -793,9 +836,10 @@ function OrderRow({ order }: { order: OrderWithItems }) {
       {showPaymentModal && (
         <ChangePaymentModal
           currentMethod={order.paymentMethod}
+          defaultEmail={order.customerEmail}
           isPending={changePayment.isPending}
           onClose={() => setShowPaymentModal(false)}
-          onConfirm={(method) => changePayment.mutate({ id: order.id, newPaymentMethod: method })}
+          onConfirm={(method, email) => changePayment.mutate({ id: order.id, newPaymentMethod: method, email })}
         />
       )}
 
@@ -821,9 +865,10 @@ function OrderRow({ order }: { order: OrderWithItems }) {
       {showCustomPaymentModal && (
         <RequestRemainingBalanceModal
           amountOwed={owedBalance}
+          defaultEmail={order.customerEmail}
           isPending={requestRemainingBalance.isPending}
           onClose={() => setShowCustomPaymentModal(false)}
-          onConfirm={(channel, amount) => requestRemainingBalance.mutate({ orderId: order.id, channel, amount })}
+          onConfirm={(channel, amount, email) => requestRemainingBalance.mutate({ orderId: order.id, channel, amount, email })}
         />
       )}
 
