@@ -159,7 +159,7 @@ export class AcsNotifier implements Notifier {
     const { EmailClient } = await import("@azure/communication-email");
 
     const results = await Promise.allSettled([
-      fromEmail
+      fromEmail && order.customerEmail
         ? new EmailClient(connectionString).beginSend({
             senderAddress: fromEmail,
             recipients: { to: [{ address: order.customerEmail }] },
@@ -223,7 +223,7 @@ export class AcsNotifier implements Notifier {
     const { EmailClient } = await import("@azure/communication-email");
 
     const results = await Promise.allSettled([
-      fromEmail
+      fromEmail && order.customerEmail
         ? new EmailClient(connectionString).beginSend({
             senderAddress: fromEmail,
             recipients: { to: [{ address: order.customerEmail }] },

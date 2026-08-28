@@ -18,7 +18,11 @@ A line within an Order linking a Product to a quantity (in batches) and a unit p
 
 ## Fulfillment Type
 
-How the order reaches the customer. Either `local_delivery` (Rapid City, SD area) or `shipping` (mailed to a full address). Determines which address field is meaningful. Does not affect the Order Status progression — `delivered` is the single terminal status for both types.
+How the order reaches the customer: `local_delivery` (Rapid City, SD area), `shipping` (mailed to a full address), or `pickup` (handed over immediately at an in-person Point of Sale checkout — no address at all). Determines which address field is meaningful (neither, for `pickup`). Does not affect the Order Status progression — `delivered` is the single terminal status for all three types, and `pickup` orders reach it the moment they're rung up (see Point of Sale).
+
+## Point of Sale
+
+The staff-facing counter checkout (`/admin/pos`), used for in-person walk-up sales as an alternative to the customer-facing online order form. Every order it creates has Fulfillment Type `pickup`. Customer name/email/phone are optional — an anonymous cash sale is allowed, stored as empty strings rather than nulls (the schema still requires the fields; a receipt/confirmation email is simply skipped when no address was given). Payment is always collected in the same transaction as checkout — Order Status goes straight to `received` (cash, logged as Cash Collected equal to the full total) or through the normal PayPal/Venmo capture flow, never `pending_payment` left open. Manually-typed card numbers go through PayPal's hosted Card Fields, same as the online order form's "Credit / Debit Card" option — this app never receives or stores raw card data. A physical PayPal card reader used at the register is a separate, un-integrated device running PayPal's own POS app; it has no code path here.
 
 ## Cart
 

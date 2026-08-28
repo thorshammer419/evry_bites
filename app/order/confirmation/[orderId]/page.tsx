@@ -19,6 +19,7 @@ const PAYMENT_LABELS: Record<PaymentMethod, string> = {
 const FULFILLMENT_LABELS: Record<FulfillmentType, string> = {
   local_delivery: "Local Delivery",
   shipping: "Shipping",
+  pickup: "Pickup",
 };
 
 export default async function OrderConfirmationPage({

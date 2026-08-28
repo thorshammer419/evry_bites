@@ -217,6 +217,25 @@ async function refundPaypalCapture(captureId: string): Promise<void> {
   }
 }
 
+// In-person counter sales (app/admin/pos): customer contact info is optional
+// (staff can ring up an anonymous walk-up sale), and fulfillmentType is
+// always "pickup" — handed over immediately, no address involved.
+const posOrderFieldsSchema = z.object({
+  firstName: z.string().min(1).optional(),
+  lastName: z.string().min(1).optional(),
+  customerEmail: z.string().email().optional(),
+  customerPhone: z.string().min(1).optional(),
+  notes: z.string().optional(),
+  items: z
+    .array(
+      z.object({
+        productId: z.string(),
+        quantity: z.number().int().positive(),
+      })
+    )
+    .min(1),
+});
+
 export const ordersRouter = router({
   listAll: publicProcedure.query(() =>
     db.order.findMany({
@@ -359,6 +378,111 @@ export const ordersRouter = router({
       if (!paypalRes.ok) {
         const body = await paypalRes.text().catch(() => "(unreadable)");
         console.error(`[paypal] order creation failed ${paypalRes.status}: ${body}`);
+        await db.order.delete({ where: { id: order.id } });
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `PayPal order creation failed (${paypalRes.status}): ${body}` });
+      }
+
+      const paypalOrder = await paypalRes.json() as { id: string };
+      await db.order.update({ where: { id: order.id }, data: { paypalOrderId: paypalOrder.id } });
+
+      return { orderId: order.id, paypalOrderId: paypalOrder.id };
+    }),
+
+  createPosCashOrder: publicProcedure
+    .input(posOrderFieldsSchema)
+    .mutation(async ({ input, ctx }) => {
+      const { productMap, totalAmount } = await resolveProducts(input.items);
+
+      const order = await db.order.create({
+        data: {
+          firstName: input.firstName ?? null,
+          lastName: input.lastName ?? null,
+          customerEmail: input.customerEmail ?? "",
+          customerPhone: input.customerPhone ?? "",
+          fulfillmentType: "pickup",
+          paymentMethod: "cash",
+          notes: input.notes,
+          status: "received",
+          totalAmount: totalAmount.toFixed(2),
+          cashCollected: totalAmount.toFixed(2),
+          orderItems: {
+            create: input.items.map((item) => {
+              const unitPrice = Number(productMap[item.productId].price);
+              return {
+                productId: item.productId,
+                quantity: item.quantity,
+                unitPrice: unitPrice.toFixed(2),
+                subtotal: (unitPrice * item.quantity).toFixed(2),
+              };
+            }),
+          },
+        },
+        include: { orderItems: { include: { product: true } } },
+      });
+
+      await decrementStock(input.items);
+
+      ctx.notifier
+        .notify({ type: "order.received", order })
+        .catch((err) => console.error("[orders] pos-cash-order notification failed:", err));
+
+      return order;
+    }),
+
+  createPosPaypalOrder: publicProcedure
+    .input(posOrderFieldsSchema)
+    .mutation(async ({ input }) => {
+      const { productMap, totalAmount } = await resolveProducts(input.items);
+      const mode = process.env.PAYPAL_MODE ?? "sandbox";
+      const baseUrl = mode === "live"
+        ? "https://api-m.paypal.com"
+        : "https://api-m.sandbox.paypal.com";
+
+      const order = await db.order.create({
+        data: {
+          firstName: input.firstName ?? null,
+          lastName: input.lastName ?? null,
+          customerEmail: input.customerEmail ?? "",
+          customerPhone: input.customerPhone ?? "",
+          fulfillmentType: "pickup",
+          paymentMethod: "paypal",
+          notes: input.notes,
+          status: "pending_payment",
+          totalAmount: totalAmount.toFixed(2),
+          orderItems: {
+            create: input.items.map((item) => {
+              const unitPrice = Number(productMap[item.productId].price);
+              return {
+                productId: item.productId,
+                quantity: item.quantity,
+                unitPrice: unitPrice.toFixed(2),
+                subtotal: (unitPrice * item.quantity).toFixed(2),
+              };
+            }),
+          },
+        },
+        include: { orderItems: { include: { product: true } } },
+      });
+
+      const accessToken = await getPaypalAccessToken();
+      const paypalRes = await fetch(`${baseUrl}/v2/checkout/orders`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          intent: "CAPTURE",
+          purchase_units: [{
+            reference_id: order.id,
+            amount: { currency_code: "USD", value: totalAmount.toFixed(2) },
+          }],
+        }),
+      });
+
+      if (!paypalRes.ok) {
+        const body = await paypalRes.text().catch(() => "(unreadable)");
+        console.error(`[paypal] pos order creation failed ${paypalRes.status}: ${body}`);
         await db.order.delete({ where: { id: order.id } });
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `PayPal order creation failed (${paypalRes.status}): ${body}` });
       }

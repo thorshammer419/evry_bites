@@ -9,6 +9,7 @@ datasource db {
 enum FulfillmentType {
   local_delivery
   shipping
+  pickup
 }
 
 enum PaymentMethod {
