@@ -35,6 +35,12 @@ enum PaymentLinkChannel {
   venmo
 }
 
+enum TenderMethod {
+  cash
+  paypal
+  venmo
+}
+
 model Product {
   id                 String       @id @default(uuid())
   name               String
@@ -73,6 +79,7 @@ model Order {
   createdAt             DateTime               @default(now())
   orderItems            OrderItem[]
   customPaymentRequests CustomPaymentRequest[]
+  tenders               Tender[]
 }
 
 model CustomPaymentRequest {
@@ -85,6 +92,17 @@ model CustomPaymentRequest {
   paypalCaptureId String?
   paid            Boolean            @default(false)
   createdAt       DateTime           @default(now())
+}
+
+model Tender {
+  id              String       @id @default(cuid())
+  orderId         String
+  order           Order        @relation(fields: [orderId], references: [id])
+  method          TenderMethod
+  amount          Decimal      @db.Decimal(10, 2)
+  paypalOrderId   String?
+  paypalCaptureId String?
+  createdAt       DateTime     @default(now())
 }
 
 model OrderItem {

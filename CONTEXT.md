@@ -22,7 +22,9 @@ How the order reaches the customer: `local_delivery` (Rapid City, SD area), `shi
 
 ## Point of Sale
 
-The staff-facing counter checkout (`/admin/pos`), used for in-person walk-up sales as an alternative to the customer-facing online order form. Every order it creates has Fulfillment Type `pickup`. Customer name/email/phone are optional — an anonymous cash sale is allowed, stored as empty strings rather than nulls (the schema still requires the fields; a receipt/confirmation email is simply skipped when no address was given). Payment is always collected in the same transaction as checkout — Order Status goes straight to `received` (cash, logged as Cash Collected equal to the full total) or through the normal PayPal/Venmo capture flow, never `pending_payment` left open. Manually-typed card numbers go through PayPal's hosted Card Fields, same as the online order form's "Credit / Debit Card" option — this app never receives or stores raw card data. A physical PayPal card reader used at the register is a separate, un-integrated device running PayPal's own POS app; it has no code path here.
+The staff-facing counter checkout (`/admin/pos`), used for in-person walk-up sales as an alternative to the customer-facing online order form. Every order it creates has Fulfillment Type `pickup`. Customer name/email/phone are optional — an anonymous cash sale is allowed, stored as empty strings rather than nulls (the schema still requires the fields; a receipt/confirmation email is simply skipped when no address was given). Manually-typed card numbers go through PayPal's hosted Card Fields, same as the online order form's "Credit / Debit Card" option — this app never receives or stores raw card data. A physical PayPal card reader used at the register is a separate, un-integrated device running PayPal's own POS app; it has no code path here.
+
+Payment can be split across multiple Tenders within one checkout — the cashier picks a payment method and an amount (defaulting to the full remaining balance, editable down for a partial payment) and submits it. The Order is created by the *first* Tender submitted, not by a separate "start sale" step — a single full payment still feels like one click. If that first Tender doesn't cover the total, the Order sits at `pending_payment` with a running "collected so far / remaining" banner in place of the product grid until enough further Tenders (possibly the same method used more than once) cover it, at which point Order Status advances to `received` exactly as it always has for a single full payment. A "Cancel Sale" action is available during an in-progress split sale to call off the Order (via Order Cancellation) and return to a fresh, empty cart.
 
 ## Cart
 
@@ -32,7 +34,7 @@ The customer's in-progress selection of products and quantities before they subm
 
 The lifecycle state of an Order. Forward progression:
 
-- `pending_payment` — order created but payment not yet collected (e.g. awaiting a PayPal/Venmo payment link); skipped when payment is captured at submission
+- `pending_payment` — order created but its total not yet fully collected (e.g. awaiting a PayPal/Venmo payment link, or a Point of Sale split sale still short of its total); skipped when a single payment covers the whole total at submission
 - `received` — set automatically on submission, or once `pending_payment` is fully paid
 - `processing` — owner marks order as being prepared
 - `ready` — owner marks order as ready
@@ -64,9 +66,13 @@ A running total of cash or check physically collected against an Order, logged m
 
 A request for part (or all) of an Order's Balance Due through a specific channel — `paypal` or `venmo` — distinct from the Order's Payment Method. PayPal requests are captured and marked paid automatically through the customer-facing payment link; Venmo requests have no capture API and are marked paid manually by the owner. Either kind can also be marked paid manually as a fallback, since real payments don't always arrive through the tracked path. A manually-marked payment can be undone by the owner (e.g. marked by mistake); a real captured PayPal payment cannot — undoing that requires an actual refund, handled through Order Cancellation instead. An Order can carry several — paid and pending — across both channels.
 
+## Tender
+
+A single, immutable record of one payment applied to an Order at checkout time on the Point of Sale page — `cash`, `paypal`, or `venmo` (a manually-typed card goes through PayPal's Card Fields and is recorded as `paypal`, the same collapsing the general checkout flow already does for the online store). An Order can accumulate several Tenders across different methods — or the same method more than once — to cover its total; this is what makes split/partial payment possible at the register. Distinct from Cash Collected and Custom Payment Request, which track payment collected *after* checkout on the customer-facing side and each only ever hold one running value or one request at a time. Once recorded, a Tender is never edited or un-recorded — only Order Cancellation undoes its effect, refunding or flagging each Tender individually the same way it already does for Cash Collected and PayPal captures.
+
 ## Balance Due
 
-An Order's total minus its Cash Collected minus its paid Custom Payment Requests. Drives whether the owner can request more payment and what amount that request defaults to. Clamped at zero — never shown or tracked as negative.
+An Order's total minus its Cash Collected, paid Custom Payment Requests, and Tenders. Drives whether the owner can request more payment (or, on the Point of Sale page, how much remains to collect) and what amount that request defaults to. Clamped at zero — never shown or tracked as negative.
 
 ## Admin Session
 

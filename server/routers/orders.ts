@@ -9,6 +9,7 @@ import { balanceDue } from "../../lib/payments";
 const INCLUDE_FULL = {
   orderItems: { include: { product: true } },
   customPaymentRequests: true,
+  tenders: true,
 } as const;
 
 // Called after a CustomPaymentRequest is marked paid (automatically via PayPal
@@ -388,10 +389,25 @@ export const ordersRouter = router({
       return { orderId: order.id, paypalOrderId: paypalOrder.id };
     }),
 
-  createPosCashOrder: publicProcedure
-    .input(posOrderFieldsSchema)
+  // --- Point of Sale split-tender mutations (app/admin/pos) ---
+  //
+  // Every POS sale is bundled into its first tender: the cashier picks a
+  // method and an amount, and submitting it both creates the Order
+  // (pending_payment, fulfillmentType "pickup") and records the first
+  // Tender in one call. If that tender doesn't cover the total, the order
+  // stays pending_payment and later tenders are applied against it via the
+  // "existing order" mutations below until the sum covers totalAmount, at
+  // which point status advances to received — same as a single full
+  // payment always has. See CONTEXT.md "Tender".
+
+  posCreateOrderCashTender: publicProcedure
+    .input(posOrderFieldsSchema.extend({ amount: z.number().positive() }))
     .mutation(async ({ input, ctx }) => {
       const { productMap, totalAmount } = await resolveProducts(input.items);
+
+      if (input.amount > totalAmount) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Amount exceeds the order total." });
+      }
 
       const order = await db.order.create({
         data: {
@@ -402,9 +418,8 @@ export const ordersRouter = router({
           fulfillmentType: "pickup",
           paymentMethod: "cash",
           notes: input.notes,
-          status: "received",
+          status: "pending_payment",
           totalAmount: totalAmount.toFixed(2),
-          cashCollected: totalAmount.toFixed(2),
           orderItems: {
             create: input.items.map((item) => {
               const unitPrice = Number(productMap[item.productId].price);
@@ -416,23 +431,73 @@ export const ordersRouter = router({
               };
             }),
           },
+          tenders: { create: [{ method: "cash", amount: input.amount.toFixed(2) }] },
         },
-        include: { orderItems: { include: { product: true } } },
+        include: INCLUDE_FULL,
       });
 
       await decrementStock(input.items);
 
-      ctx.notifier
-        .notify({ type: "order.received", order })
-        .catch((err) => console.error("[orders] pos-cash-order notification failed:", err));
+      if (input.amount >= totalAmount) {
+        const received = await db.order.update({
+          where: { id: order.id },
+          data: { status: "received" },
+          include: INCLUDE_FULL,
+        });
+        ctx.notifier
+          .notify({ type: "order.received", order: received })
+          .catch((err) => console.error("[orders] pos-cash-tender notification failed:", err));
+        return received;
+      }
 
       return order;
     }),
 
-  createPosPaypalOrder: publicProcedure
-    .input(posOrderFieldsSchema)
+  posAddCashTender: publicProcedure
+    .input(z.object({ orderId: z.string(), amount: z.number().positive() }))
+    .mutation(async ({ input, ctx }) => {
+      const order = await db.order.findUniqueOrThrow({
+        where: { id: input.orderId },
+        include: INCLUDE_FULL,
+      });
+
+      if (order.status !== "pending_payment" || order.fulfillmentType !== "pickup") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Order is not an in-progress POS sale." });
+      }
+
+      const remaining = balanceDue(order);
+      if (input.amount > remaining) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Amount exceeds the remaining balance." });
+      }
+
+      await db.tender.create({
+        data: { orderId: order.id, method: "cash", amount: input.amount.toFixed(2) },
+      });
+
+      if (input.amount >= remaining) {
+        const received = await db.order.update({
+          where: { id: order.id },
+          data: { status: "received" },
+          include: INCLUDE_FULL,
+        });
+        ctx.notifier
+          .notify({ type: "order.received", order: received })
+          .catch((err) => console.error("[orders] pos-cash-tender notification failed:", err));
+        return received;
+      }
+
+      return db.order.findUniqueOrThrow({ where: { id: order.id }, include: INCLUDE_FULL });
+    }),
+
+  posCreateOrderPaypalTender: publicProcedure
+    .input(posOrderFieldsSchema.extend({ amount: z.number().positive() }))
     .mutation(async ({ input }) => {
       const { productMap, totalAmount } = await resolveProducts(input.items);
+
+      if (input.amount > totalAmount) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Amount exceeds the order total." });
+      }
+
       const mode = process.env.PAYPAL_MODE ?? "sandbox";
       const baseUrl = mode === "live"
         ? "https://api-m.paypal.com"
@@ -475,7 +540,7 @@ export const ordersRouter = router({
           intent: "CAPTURE",
           purchase_units: [{
             reference_id: order.id,
-            amount: { currency_code: "USD", value: totalAmount.toFixed(2) },
+            amount: { currency_code: "USD", value: input.amount.toFixed(2) },
           }],
         }),
       });
@@ -488,9 +553,107 @@ export const ordersRouter = router({
       }
 
       const paypalOrder = await paypalRes.json() as { id: string };
-      await db.order.update({ where: { id: order.id }, data: { paypalOrderId: paypalOrder.id } });
+      return { orderId: order.id, paypalOrderId: paypalOrder.id, amount: input.amount };
+    }),
 
-      return { orderId: order.id, paypalOrderId: paypalOrder.id };
+  posCreatePaypalTenderForOrder: publicProcedure
+    .input(z.object({ orderId: z.string(), amount: z.number().positive() }))
+    .mutation(async ({ input }) => {
+      const order = await db.order.findUniqueOrThrow({
+        where: { id: input.orderId },
+        include: INCLUDE_FULL,
+      });
+
+      if (order.status !== "pending_payment" || order.fulfillmentType !== "pickup") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Order is not an in-progress POS sale." });
+      }
+
+      const remaining = balanceDue(order);
+      if (input.amount > remaining) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Amount exceeds the remaining balance." });
+      }
+
+      const mode = process.env.PAYPAL_MODE ?? "sandbox";
+      const baseUrl = mode === "live" ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com";
+      const accessToken = await getPaypalAccessToken();
+
+      const paypalRes = await fetch(`${baseUrl}/v2/checkout/orders`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({
+          intent: "CAPTURE",
+          purchase_units: [{ reference_id: order.id, amount: { currency_code: "USD", value: input.amount.toFixed(2) } }],
+        }),
+      });
+
+      if (!paypalRes.ok) {
+        const body = await paypalRes.text().catch(() => "(unreadable)");
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `PayPal error (${paypalRes.status}): ${body}` });
+      }
+
+      const paypalOrder = await paypalRes.json() as { id: string };
+      return { orderId: order.id, paypalOrderId: paypalOrder.id, amount: input.amount };
+    }),
+
+  posCaptureTender: publicProcedure
+    .input(z.object({ orderId: z.string(), paypalOrderId: z.string(), amount: z.number().positive() }))
+    .mutation(async ({ input, ctx }) => {
+      const order = await db.order.findUniqueOrThrow({
+        where: { id: input.orderId },
+        include: INCLUDE_FULL,
+      });
+      const isFirstTender = order.tenders.length === 0;
+
+      const mode = process.env.PAYPAL_MODE ?? "sandbox";
+      const baseUrl = mode === "live" ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com";
+      const accessToken = await getPaypalAccessToken();
+
+      const captureRes = await fetch(`${baseUrl}/v2/checkout/orders/${input.paypalOrderId}/capture`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      });
+
+      if (!captureRes.ok) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Payment capture failed." });
+      }
+
+      const captureData = await captureRes.json() as {
+        payment_source?: { venmo?: unknown };
+        purchase_units?: { payments?: { captures?: { id?: string }[] } }[];
+      };
+
+      const method = captureData.payment_source?.venmo ? "venmo" : "paypal";
+      const captureId = captureData.purchase_units?.[0]?.payments?.captures?.[0]?.id;
+
+      await db.tender.create({
+        data: {
+          orderId: order.id,
+          method,
+          amount: input.amount.toFixed(2),
+          paypalOrderId: input.paypalOrderId,
+          ...(captureId ? { paypalCaptureId: captureId } : {}),
+        },
+      });
+
+      if (isFirstTender) {
+        await decrementStock(order.orderItems.map((i) => ({ productId: i.productId, quantity: i.quantity })));
+        await db.order.update({ where: { id: order.id }, data: { paymentMethod: method } });
+      }
+
+      const remaining = balanceDue(order) - input.amount;
+      if (remaining <= 0) {
+        const received = await db.order.update({
+          where: { id: order.id },
+          data: { status: "received" },
+          include: INCLUDE_FULL,
+        });
+        ctx.notifier
+          .notify({ type: "order.received", order: received })
+          .catch((err) => console.error("[orders] pos-tender-capture notification failed:", err));
+        return received;
+      }
+
+      return db.order.findUniqueOrThrow({ where: { id: order.id }, include: INCLUDE_FULL });
     }),
 
   capturePaypalOrder: publicProcedure
@@ -709,6 +872,35 @@ export const ordersRouter = router({
 
       if (existing.cashCollected !== null && Number(existing.cashCollected) > 0) {
         manualReturn.push({ channel: "cash", amount: Number(existing.cashCollected) });
+      }
+
+      // Tender rows (POS split-tender sales) — same refund/manual-return split
+      // as above, applied per Tender since a sale can carry multiple cash
+      // and/or multiple card tenders. Tender rows are never mutated here (no
+      // "paid" flag to reset) — they're an immutable record of what was
+      // actually collected.
+      for (const tender of existing.tenders) {
+        if (tender.method === "paypal" && tender.paypalCaptureId) {
+          const refunded = await refundPaypalCapture(tender.paypalCaptureId)
+            .then(() => true)
+            .catch((err) => {
+              console.error(`[orders] failed to refund tender ${tender.id}:`, err);
+              return false;
+            });
+          if (refunded) {
+            autoRefunded.push({ channel: "paypal", amount: Number(tender.amount) });
+          } else {
+            manualReturn.push({ channel: "paypal", amount: Number(tender.amount) });
+          }
+        } else if (tender.method === "venmo") {
+          manualReturn.push({
+            channel: "venmo",
+            amount: Number(tender.amount),
+            detail: process.env.VENMO_HANDLE ?? "@evrybites",
+          });
+        } else if (tender.method === "cash") {
+          manualReturn.push({ channel: "cash", amount: Number(tender.amount) });
+        }
       }
 
       // Reset collected amounts

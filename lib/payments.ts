@@ -12,6 +12,10 @@ type OrderForBalance = {
   // that primary capture, so they're irrelevant once it's present.
   paypalCaptureId: string | null;
   customPaymentRequests: { amount: DecimalLike; paid: boolean }[];
+  // POS split-tender sales (app/admin/pos) record each payment as a Tender
+  // instead of using cashCollected/paypalCaptureId — optional so every
+  // non-POS call site keeps compiling and behaving identically.
+  tenders?: { amount: DecimalLike }[];
 };
 
 export function balanceDue(order: OrderForBalance): number {
@@ -22,6 +26,7 @@ export function balanceDue(order: OrderForBalance): number {
   const paidCustom = order.customPaymentRequests
     .filter((r) => r.paid)
     .reduce((sum, r) => sum + Number(r.amount), 0);
+  const tendered = (order.tenders ?? []).reduce((sum, t) => sum + Number(t.amount), 0);
 
-  return Math.max(total - cash - paidCustom, 0);
+  return Math.max(total - cash - paidCustom - tendered, 0);
 }

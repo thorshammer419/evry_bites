@@ -39,6 +39,7 @@ type OrderWithItems = {
     paid: boolean;
     createdAt: Date;
   }[];
+  tenders: { amount: Prisma.Decimal }[];
 };
 
 const STATUS_LABELS: Record<OrderStatus, string> = {
@@ -68,6 +69,12 @@ const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   paypal: "PayPal",
   cash: "Cash or Check on Delivery",
   check: "Cash or Check on Delivery",
+};
+
+const FULFILLMENT_LABELS: Record<FulfillmentType, string> = {
+  local_delivery: "Local Delivery",
+  shipping: "Shipping",
+  pickup: "Pickup",
 };
 
 const ALL_STATUSES = Object.keys(STATUS_LABELS) as OrderStatus[];
@@ -635,7 +642,7 @@ function OrderRow({ order }: { order: OrderWithItems }) {
             {[order.firstName, order.lastName].filter(Boolean).join(" ") || order.customerEmail}
           </p>
           <p className="text-xs text-sky-500 mt-0.5">
-            {order.fulfillmentType === "local_delivery" ? "Local Delivery" : "Shipping"} · {date}
+            {FULFILLMENT_LABELS[order.fulfillmentType]} · {date}
           </p>
         </div>
         <span className="text-sky-400 text-sm mt-1">{expanded ? "▲" : "▼"}</span>

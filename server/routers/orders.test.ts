@@ -16,12 +16,16 @@ vi.mock("../../lib/db", () => ({
       findUniqueOrThrow: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
+      delete: vi.fn(),
     },
     customPaymentRequest: {
       create: vi.fn(),
       findUnique: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
+    tender: {
+      create: vi.fn(),
     },
   },
 }));
@@ -935,6 +939,7 @@ describe("orders.cancelOrder", () => {
 
   function cancelableOrder(overrides: Partial<typeof mockOrder> & {
     customPaymentRequests?: { id: string; amount: string; channel: "paypal" | "venmo"; paypalCaptureId: string | null; paid: boolean }[];
+    tenders?: { id: string; method: "cash" | "paypal" | "venmo"; amount: string; paypalCaptureId: string | null }[];
   }) {
     return {
       ...mockOrder,
@@ -943,6 +948,7 @@ describe("orders.cancelOrder", () => {
       cashCollected: null,
       paypalCaptureId: null,
       customPaymentRequests: [],
+      tenders: [],
       ...overrides,
     };
   }
@@ -970,6 +976,78 @@ describe("orders.cancelOrder", () => {
     );
     expect(result.manualReturn).toHaveLength(2);
     expect(result.isRefund).toBe(false);
+  });
+
+  it("splits a POS split-tender sale (captured PayPal tender + cash tender) into autoRefunded vs manualReturn", async () => {
+    const existing = cancelableOrder({
+      fulfillmentType: "pickup",
+      tenders: [
+        { id: "tender-paypal", method: "paypal", amount: "18.00", paypalCaptureId: "CAP-TENDER-1" },
+        { id: "tender-cash", method: "cash", amount: "12.00", paypalCaptureId: null },
+      ],
+    });
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(existing);
+    vi.mocked(db.order.update).mockResolvedValue({ ...existing, status: "cancelled" });
+
+    const result = await caller.orders.cancelOrder({ id: "order-123" });
+
+    expect(result.autoRefunded).toEqual([{ channel: "paypal", amount: 18 }]);
+    expect(result.manualReturn).toEqual([{ channel: "cash", amount: 12 }]);
+  });
+
+  it("lists two separate cash tenders as two separate manualReturn entries, not merged", async () => {
+    const existing = cancelableOrder({
+      fulfillmentType: "pickup",
+      tenders: [
+        { id: "tender-1", method: "cash", amount: "10.00", paypalCaptureId: null },
+        { id: "tender-2", method: "cash", amount: "10.00", paypalCaptureId: null },
+      ],
+    });
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(existing);
+    vi.mocked(db.order.update).mockResolvedValue({ ...existing, status: "cancelled" });
+
+    const result = await caller.orders.cancelOrder({ id: "order-123" });
+
+    expect(result.manualReturn).toEqual([
+      { channel: "cash", amount: 10 },
+      { channel: "cash", amount: 10 },
+    ]);
+  });
+
+  it("moves a failed-to-refund PayPal tender to manualReturn", async () => {
+    vi.mocked(fetch).mockImplementation(async (url: unknown) => {
+      const s = String(url);
+      if (s.includes("/oauth2/token")) return { ok: true, json: async () => ({ access_token: "test-token" }) } as never;
+      if (s.includes("/CAP-TENDER-FAIL/refund")) return { ok: false, text: async () => "capture already refunded" } as never;
+      return { ok: true, json: async () => ({}) } as never;
+    });
+    const existing = cancelableOrder({
+      fulfillmentType: "pickup",
+      tenders: [{ id: "tender-fail", method: "paypal", amount: "22.00", paypalCaptureId: "CAP-TENDER-FAIL" }],
+    });
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(existing);
+    vi.mocked(db.order.update).mockResolvedValue({ ...existing, status: "cancelled" });
+
+    const result = await caller.orders.cancelOrder({ id: "order-123" });
+
+    expect(result.autoRefunded).toEqual([]);
+    expect(result.manualReturn).toEqual([{ channel: "paypal", amount: 22 }]);
+  });
+
+  it("reflects both legacy cashCollected and Tenders when an order somehow carries both", async () => {
+    const existing = cancelableOrder({
+      cashCollected: "5.00",
+      tenders: [{ id: "tender-1", method: "cash", amount: "7.00", paypalCaptureId: null }],
+    });
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(existing);
+    vi.mocked(db.order.update).mockResolvedValue({ ...existing, status: "cancelled", cashCollected: null });
+
+    const result = await caller.orders.cancelOrder({ id: "order-123" });
+
+    expect(result.manualReturn).toEqual([
+      { channel: "cash", amount: 5 },
+      { channel: "cash", amount: 7 },
+    ]);
   });
 
   it("moves a custom PayPal payment to manualReturn when its refund attempt fails, instead of reporting it as auto-refunded", async () => {
@@ -1060,6 +1138,209 @@ describe("orders.cancelOrder", () => {
       expect.objectContaining({ data: { status: "refunded", cashCollected: null } })
     );
     expect(result.isRefund).toBe(true);
+  });
+});
+
+describe("orders.posCreateOrderCashTender", () => {
+  const posItems = [
+    { productId: "product-1", quantity: 2 },
+    { productId: "product-2", quantity: 1 },
+  ]; // matches mockProducts: $12*2 + $15*1 = $39.00
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(db.product.findMany).mockResolvedValue(mockProducts);
+  });
+
+  it("a full-amount tender creates the order as received and notifies", async () => {
+    const created = {
+      ...mockOrder, fulfillmentType: "pickup", paymentMethod: "cash", status: "pending_payment",
+      totalAmount: "39.00", tenders: [{ id: "t-1", method: "cash", amount: "39.00" }],
+    };
+    vi.mocked(db.order.create).mockResolvedValue(created);
+    vi.mocked(db.order.update).mockResolvedValue({ ...created, status: "received" });
+
+    const result = await caller.orders.posCreateOrderCashTender({ items: posItems, amount: 39 });
+
+    expect(db.order.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          fulfillmentType: "pickup",
+          paymentMethod: "cash",
+          status: "pending_payment",
+          totalAmount: "39.00",
+          tenders: { create: [{ method: "cash", amount: "39.00" }] },
+        }),
+      })
+    );
+    expect(db.order.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: "received" } })
+    );
+    expect(mockNotify).toHaveBeenCalledWith(expect.objectContaining({ type: "order.received" }));
+    expect(result.status).toBe("received");
+  });
+
+  it("a partial tender leaves the order pending_payment without notifying", async () => {
+    const created = {
+      ...mockOrder, fulfillmentType: "pickup", paymentMethod: "cash", status: "pending_payment",
+      totalAmount: "39.00", tenders: [{ id: "t-1", method: "cash", amount: "20.00" }],
+    };
+    vi.mocked(db.order.create).mockResolvedValue(created);
+
+    const result = await caller.orders.posCreateOrderCashTender({ items: posItems, amount: 20 });
+
+    expect(db.order.update).not.toHaveBeenCalled();
+    expect(mockNotify).not.toHaveBeenCalled();
+    expect(result.status).toBe("pending_payment");
+  });
+
+  it("rejects an amount greater than the order total, without creating the order", async () => {
+    await expect(
+      caller.orders.posCreateOrderCashTender({ items: posItems, amount: 100 })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    expect(db.order.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("orders.posAddCashTender", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function pendingPosOrder(overrides: Partial<typeof mockOrder> = {}) {
+    return {
+      ...mockOrder,
+      fulfillmentType: "pickup",
+      status: "pending_payment",
+      totalAmount: "39.00",
+      cashCollected: null,
+      customPaymentRequests: [],
+      tenders: [{ id: "t-1", method: "cash", amount: "20.00" }],
+      ...overrides,
+    };
+  }
+
+  it("a tender that exactly covers the remaining balance flips status to received and notifies", async () => {
+    const existing = pendingPosOrder();
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(existing);
+    vi.mocked(db.order.update).mockResolvedValue({ ...existing, status: "received" });
+
+    const result = await caller.orders.posAddCashTender({ orderId: "order-123", amount: 19 });
+
+    expect(db.tender.create).toHaveBeenCalledWith({
+      data: { orderId: "order-123", method: "cash", amount: "19.00" },
+    });
+    expect(db.order.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: "received" } })
+    );
+    expect(mockNotify).toHaveBeenCalledWith(expect.objectContaining({ type: "order.received" }));
+    expect(result.status).toBe("received");
+  });
+
+  it("a tender smaller than the remaining balance stays pending_payment without notifying", async () => {
+    const existing = pendingPosOrder();
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(existing);
+
+    const result = await caller.orders.posAddCashTender({ orderId: "order-123", amount: 5 });
+
+    expect(db.order.update).not.toHaveBeenCalled();
+    expect(mockNotify).not.toHaveBeenCalled();
+    expect(result.status).toBe("pending_payment");
+  });
+
+  it("rejects an amount greater than the remaining balance", async () => {
+    const existing = pendingPosOrder();
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(existing);
+
+    await expect(
+      caller.orders.posAddCashTender({ orderId: "order-123", amount: 100 })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    expect(db.tender.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects when the order is not an in-progress POS sale", async () => {
+    const existing = pendingPosOrder({ status: "received" });
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(existing);
+
+    await expect(
+      caller.orders.posAddCashTender({ orderId: "order-123", amount: 5 })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+});
+
+describe("orders.posCaptureTender", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal("fetch", vi.fn(async (url: string) =>
+      String(url).includes("/oauth2/token")
+        ? { ok: true, json: async () => ({ access_token: "test-token" }) }
+        : { ok: true, json: async () => ({ purchase_units: [{ payments: { captures: [{ id: "CAP-TENDER-1" }] } }] }) }
+    ));
+  });
+
+  it("first capture on a fresh order decrements stock and sets paymentMethod from the detected method", async () => {
+    const fresh = {
+      ...mockOrder, fulfillmentType: "pickup", status: "pending_payment", totalAmount: "39.00",
+      cashCollected: null, customPaymentRequests: [], tenders: [],
+    };
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(fresh);
+    vi.mocked(db.order.update).mockResolvedValue({ ...fresh, status: "received", paymentMethod: "paypal" });
+
+    const result = await caller.orders.posCaptureTender({ orderId: "order-123", paypalOrderId: "PP-1", amount: 39 });
+
+    expect(db.tender.create).toHaveBeenCalledWith({
+      data: {
+        orderId: "order-123", method: "paypal", amount: "39.00",
+        paypalOrderId: "PP-1", paypalCaptureId: "CAP-TENDER-1",
+      },
+    });
+    expect(db.product.updateMany).toHaveBeenCalled();
+    expect(db.order.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { paymentMethod: "paypal" } })
+    );
+    expect(result.status).toBe("received");
+  });
+
+  it("second capture on an order that already has a tender does not decrement stock or overwrite paymentMethod", async () => {
+    const midSale = {
+      ...mockOrder, fulfillmentType: "pickup", paymentMethod: "cash", status: "pending_payment", totalAmount: "39.00",
+      cashCollected: null, customPaymentRequests: [], tenders: [{ amount: "20.00" }],
+    };
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(midSale);
+    vi.mocked(db.order.update).mockResolvedValue({ ...midSale, status: "received" });
+
+    const result = await caller.orders.posCaptureTender({ orderId: "order-123", paypalOrderId: "PP-2", amount: 19 });
+
+    expect(db.product.updateMany).not.toHaveBeenCalled();
+    expect(db.order.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: { paymentMethod: expect.anything() } })
+    );
+    expect(result.status).toBe("received");
+  });
+
+  it("detects venmo from payment_source and records the tender as venmo", async () => {
+    vi.mocked(fetch).mockImplementation(async (url: unknown) => {
+      const s = String(url);
+      if (s.includes("/oauth2/token")) return { ok: true, json: async () => ({ access_token: "test-token" }) } as never;
+      return {
+        ok: true,
+        json: async () => ({ payment_source: { venmo: {} }, purchase_units: [{ payments: { captures: [{ id: "CAP-VENMO" }] } }] }),
+      } as never;
+    });
+    const fresh = {
+      ...mockOrder, fulfillmentType: "pickup", status: "pending_payment", totalAmount: "39.00",
+      cashCollected: null, customPaymentRequests: [], tenders: [],
+    };
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(fresh);
+    vi.mocked(db.order.update).mockResolvedValue({ ...fresh, paymentMethod: "venmo" });
+
+    await caller.orders.posCaptureTender({ orderId: "order-123", paypalOrderId: "PP-3", amount: 10 });
+
+    expect(db.tender.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ method: "venmo", paypalCaptureId: "CAP-VENMO" }) })
+    );
   });
 });
 
