@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { trpc } from "../../../../lib/trpc/react";
 import type { Granularity, SalesReportRow } from "../../../../lib/sales-report";
@@ -11,6 +11,36 @@ const GRANULARITIES: { value: Granularity; label: string }[] = [
   { value: "month", label: "Month" },
   { value: "year", label: "Year" },
 ];
+
+type PaymentMethodFilter = "venmo" | "paypal" | "cash" | "check";
+type ChannelFilter = "point_of_sale" | "customer_web";
+
+const PAYMENT_METHOD_OPTIONS: { value: PaymentMethodFilter | ""; label: string }[] = [
+  { value: "", label: "All" },
+  { value: "venmo", label: "Venmo" },
+  { value: "paypal", label: "PayPal" },
+  { value: "cash", label: "Cash" },
+  { value: "check", label: "Check" },
+];
+
+const CHANNEL_OPTIONS: { value: ChannelFilter | ""; label: string }[] = [
+  { value: "", label: "All" },
+  { value: "point_of_sale", label: "POS" },
+  { value: "customer_web", label: "Customer Web" },
+];
+
+function toggleSet<T>(set: Set<T>, value: T): Set<T> {
+  const next = new Set(set);
+  if (next.has(value)) next.delete(value);
+  else next.add(value);
+  return next;
+}
+
+function pillClass(active: boolean): string {
+  return `px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+    active ? "bg-blue-900 text-white" : "border border-sky-200 text-blue-700 hover:bg-sky-50"
+  }`;
+}
 
 type ChartMetric = "salesCount" | "salesRevenue" | "refundsCount" | "refundsTotal";
 
@@ -39,15 +69,27 @@ function PillGroup<T extends string>({
   return (
     <div className="flex gap-2 flex-wrap">
       {options.map((o) => (
-        <button
-          key={o.value}
-          onClick={() => onChange(o.value)}
-          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-            value === o.value
-              ? "bg-blue-900 text-white"
-              : "border border-sky-200 text-blue-700 hover:bg-sky-50"
-          }`}
-        >
+        <button key={o.value} onClick={() => onChange(o.value)} className={pillClass(value === o.value)}>
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function MultiPillGroup<T extends string>({
+  options,
+  values,
+  onToggle,
+}: {
+  options: { value: T; label: string }[];
+  values: Set<T>;
+  onToggle: (value: T) => void;
+}) {
+  return (
+    <div className="flex gap-2 flex-wrap">
+      {options.map((o) => (
+        <button key={o.value} onClick={() => onToggle(o.value)} className={pillClass(values.has(o.value))}>
           {o.label}
         </button>
       ))}
@@ -91,7 +133,51 @@ function SalesChart({ rows, metric }: { rows: SalesReportRow[]; metric: ChartMet
 export function AdminSalesClient() {
   const [granularity, setGranularity] = useState<Granularity>("month");
   const [chartMetric, setChartMetric] = useState<ChartMetric>("salesRevenue");
-  const { data: rows, isLoading, isError } = trpc.sales.report.useQuery({ granularity });
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethodFilter | "">("");
+  const [channel, setChannel] = useState<ChannelFilter | "">("");
+  const [productFilter, setProductFilter] = useState<Set<string>>(new Set());
+  const [nameInput, setNameInput] = useState("");
+  const [customerName, setCustomerName] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+
+  // Debounce the free-text name search so it doesn't fire a query on every
+  // keystroke — filtering happens at the database, unlike the Orders page's
+  // client-side search.
+  useEffect(() => {
+    const timeout = setTimeout(() => setCustomerName(nameInput.trim()), 300);
+    return () => clearTimeout(timeout);
+  }, [nameInput]);
+
+  const { data: products } = trpc.products.listAll.useQuery();
+  const productOptions = (products ?? []).map((p) => ({ value: p.id, label: p.name }));
+
+  const hasDateRange = Boolean(dateFrom && dateTo);
+  const hasAnyFilter =
+    Boolean(paymentMethod) ||
+    Boolean(channel) ||
+    productFilter.size > 0 ||
+    Boolean(customerName) ||
+    Boolean(dateFrom) ||
+    Boolean(dateTo);
+
+  function clearFilters() {
+    setPaymentMethod("");
+    setChannel("");
+    setProductFilter(new Set());
+    setNameInput("");
+    setDateFrom("");
+    setDateTo("");
+  }
+
+  const { data: rows, isLoading, isError } = trpc.sales.report.useQuery({
+    granularity,
+    ...(paymentMethod && { paymentMethod }),
+    ...(channel && { channel }),
+    ...(productFilter.size > 0 && { productIds: Array.from(productFilter) }),
+    ...(customerName && { customerName }),
+    ...(hasDateRange && { dateFrom, dateTo }),
+  });
 
   return (
     <div className="px-4 py-6">
@@ -103,6 +189,76 @@ export function AdminSalesClient() {
             Granularity
           </p>
           <PillGroup options={GRANULARITIES} value={granularity} onChange={setGranularity} />
+        </div>
+
+        <div className="mb-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold text-sky-400 uppercase tracking-wide">Filters</p>
+            {hasAnyFilter && (
+              <button onClick={clearFilters} className="text-xs text-blue-600 hover:text-blue-900 underline">
+                Clear all filters
+              </button>
+            )}
+          </div>
+
+          <input
+            type="search"
+            placeholder="Search by customer name…"
+            value={nameInput}
+            onChange={(e) => setNameInput(e.target.value)}
+            className="w-full rounded-xl border border-sky-200 bg-white px-4 py-2.5 text-sm text-blue-900 placeholder-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400"
+          />
+
+          <div className="flex items-center gap-2">
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="flex-1 rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm text-blue-900 focus:outline-none focus:ring-2 focus:ring-sky-400"
+            />
+            <span className="text-sky-400 text-sm shrink-0">to</span>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="flex-1 rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm text-blue-900 focus:outline-none focus:ring-2 focus:ring-sky-400"
+            />
+            {(dateFrom || dateTo) && (
+              <button
+                onClick={() => { setDateFrom(""); setDateTo(""); }}
+                className="text-xs text-blue-600 hover:text-blue-900 shrink-0 underline"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+
+          <div>
+            <p className="text-xs font-semibold text-sky-400 uppercase tracking-wide mb-1.5">
+              Payment Method
+            </p>
+            <PillGroup options={PAYMENT_METHOD_OPTIONS} value={paymentMethod} onChange={setPaymentMethod} />
+          </div>
+
+          <div>
+            <p className="text-xs font-semibold text-sky-400 uppercase tracking-wide mb-1.5">
+              Sales Channel
+            </p>
+            <PillGroup options={CHANNEL_OPTIONS} value={channel} onChange={setChannel} />
+          </div>
+
+          {productOptions.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-sky-400 uppercase tracking-wide mb-1.5">
+                Products
+              </p>
+              <MultiPillGroup
+                options={productOptions}
+                values={productFilter}
+                onToggle={(id) => setProductFilter((prev) => toggleSet(prev, id))}
+              />
+            </div>
+          )}
         </div>
 
         {rows && rows.length > 0 && (
