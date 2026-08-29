@@ -2,9 +2,9 @@ export const dynamic = "force-dynamic";
 
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
-import { createCallerFactory } from "../../../server/trpc";
-import { appRouter } from "../../../server/routers/_app";
-import { NullNotifier } from "../../../lib/null-notifier";
+import { createCallerFactory } from "../../../../server/trpc";
+import { appRouter } from "../../../../server/routers/_app";
+import { NullNotifier } from "../../../../lib/null-notifier";
 
 const createCaller = createCallerFactory(appRouter);
 const caller = createCaller({ notifier: new NullNotifier() });

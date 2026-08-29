@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { computeSessionToken } from "../../lib/auth";
+import { computeSessionToken } from "../../../lib/auth";
 import { AdminNav } from "./AdminNav";
 
 export default async function AdminLayout({

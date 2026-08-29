@@ -2,7 +2,7 @@
 
 import { useState, useActionState } from "react";
 import Link from "next/link";
-import { validateProductImage, ImageValidationError } from "../../../lib/product-image";
+import { validateProductImage, ImageValidationError } from "../../../../lib/product-image";
 
 type ActionState = { error?: string } | null;
 

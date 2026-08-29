@@ -1,6 +1,6 @@
-import { appRouter } from "../../../server/routers/_app";
-import { createCallerFactory } from "../../../server/trpc";
-import { NullNotifier } from "../../../lib/null-notifier";
+import { appRouter } from "../../../../server/routers/_app";
+import { createCallerFactory } from "../../../../server/trpc";
+import { NullNotifier } from "../../../../lib/null-notifier";
 import { PosClient } from "./PosClient";
 
 export const dynamic = "force-dynamic";

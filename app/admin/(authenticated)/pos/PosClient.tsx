@@ -9,7 +9,7 @@ import {
   PayPalCardFieldsForm,
   usePayPalCardFields,
 } from "@paypal/react-paypal-js";
-import { trpc } from "../../../lib/trpc/react";
+import { trpc } from "../../../../lib/trpc/react";
 
 interface Props {
   products: Product[];
