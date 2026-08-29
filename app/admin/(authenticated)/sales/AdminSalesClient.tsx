@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { trpc } from "../../../../lib/trpc/react";
-import type { Granularity } from "../../../../lib/sales-report";
+import type { Granularity, SalesReportRow } from "../../../../lib/sales-report";
 
 const GRANULARITIES: { value: Granularity; label: string }[] = [
   { value: "day", label: "Day" },
@@ -11,14 +12,85 @@ const GRANULARITIES: { value: Granularity; label: string }[] = [
   { value: "year", label: "Year" },
 ];
 
+type ChartMetric = "salesCount" | "salesRevenue" | "refundsCount" | "refundsTotal";
+
 // Net revenue can go negative (a bucket with refunds but no sales) — unlike
 // every other money value in this codebase, which is always non-negative.
 function formatCurrency(amount: number): string {
   return amount < 0 ? `-$${(-amount).toFixed(2)}` : `$${amount.toFixed(2)}`;
 }
 
+const CHART_METRICS: { value: ChartMetric; label: string; format: (n: number) => string }[] = [
+  { value: "salesCount", label: "Sales Count", format: String },
+  { value: "salesRevenue", label: "Sales Revenue", format: formatCurrency },
+  { value: "refundsCount", label: "Refunds Count", format: String },
+  { value: "refundsTotal", label: "Refunds Total", format: formatCurrency },
+];
+
+function PillGroup<T extends string>({
+  options,
+  value,
+  onChange,
+}: {
+  options: { value: T; label: string }[];
+  value: T;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div className="flex gap-2 flex-wrap">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          onClick={() => onChange(o.value)}
+          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+            value === o.value
+              ? "bg-blue-900 text-white"
+              : "border border-sky-200 text-blue-700 hover:bg-sky-50"
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function SalesChart({ rows, metric }: { rows: SalesReportRow[]; metric: ChartMetric }) {
+  const { label, format } = CHART_METRICS.find((m) => m.value === metric)!;
+
+  return (
+    <div className="rounded-2xl border border-sky-100 bg-white shadow-sm p-4 mb-4">
+      <ResponsiveContainer width="100%" height={240}>
+        <BarChart data={rows} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
+          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e0f2fe" />
+          <XAxis
+            dataKey="periodLabel"
+            tick={{ fontSize: 11, fill: "#7dd3fc" }}
+            axisLine={{ stroke: "#e0f2fe" }}
+            tickLine={false}
+          />
+          <YAxis
+            tick={{ fontSize: 11, fill: "#7dd3fc" }}
+            axisLine={false}
+            tickLine={false}
+            tickFormatter={format}
+            width={64}
+          />
+          <Tooltip
+            formatter={(value) => [format(Number(value)), label]}
+            labelStyle={{ color: "#1e3a8a" }}
+            contentStyle={{ borderRadius: 12, borderColor: "#e0f2fe", fontSize: 12 }}
+          />
+          <Bar dataKey={metric} name={label} fill="#1e3a8a" radius={[4, 4, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
 export function AdminSalesClient() {
   const [granularity, setGranularity] = useState<Granularity>("month");
+  const [chartMetric, setChartMetric] = useState<ChartMetric>("salesRevenue");
   const { data: rows, isLoading, isError } = trpc.sales.report.useQuery({ granularity });
 
   return (
@@ -30,22 +102,20 @@ export function AdminSalesClient() {
           <p className="text-xs font-semibold text-sky-400 uppercase tracking-wide mb-1.5">
             Granularity
           </p>
-          <div className="flex gap-2 flex-wrap">
-            {GRANULARITIES.map((g) => (
-              <button
-                key={g.value}
-                onClick={() => setGranularity(g.value)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                  granularity === g.value
-                    ? "bg-blue-900 text-white"
-                    : "border border-sky-200 text-blue-700 hover:bg-sky-50"
-                }`}
-              >
-                {g.label}
-              </button>
-            ))}
-          </div>
+          <PillGroup options={GRANULARITIES} value={granularity} onChange={setGranularity} />
         </div>
+
+        {rows && rows.length > 0 && (
+          <div className="mb-4">
+            <p className="text-xs font-semibold text-sky-400 uppercase tracking-wide mb-1.5">
+              Chart Metric
+            </p>
+            <div className="mb-3">
+              <PillGroup options={CHART_METRICS} value={chartMetric} onChange={setChartMetric} />
+            </div>
+            <SalesChart rows={rows} metric={chartMetric} />
+          </div>
+        )}
 
         {isLoading && (
           <div className="text-center py-16 text-sky-500">
