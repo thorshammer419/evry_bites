@@ -8,6 +8,10 @@ The atomic unit of sale for a product. Each product defines its batch size (e.g.
 
 A baked good available for purchase. Each product has a name, description, price (per batch), batch size, unit label (display string, e.g. "dozen"), image, and an active flag to control visibility.
 
+## Product Cost Record
+
+A dated entry in a Product's cost history — what a Batch of that Product cost to make, effective from a given date. Immutable and append-only: a Product Cost Record is never edited or deleted, only superseded by a later one. Each record stores only an *effective-from* date, never an end date — the cost that applied to a Sale is whichever record has the latest effective-from date on or before that Sale's date, so adding a new record automatically closes out the previous one with no possibility of a gap or an overlap. Supersedes the single (non-historical) cost-per-batch value products used to carry — existing values were migrated into each product's first Product Cost Record, effective from the product's creation date. Exists to eventually support a profit calculation (Sales Revenue minus cost of goods sold); nothing in the product surfaces that calculation yet.
+
 ## Order
 
 A customer's request to purchase one or more products. Contains customer contact info, fulfillment details, a Payment Method, and a status that progresses through a defined lifecycle.
@@ -19,6 +23,10 @@ A line within an Order linking a Product to a quantity (in batches) and a unit p
 ## Fulfillment Type
 
 How the order reaches the customer: `local_delivery` (Rapid City, SD area), `shipping` (mailed to a full address), or `pickup` (handed over immediately at an in-person Point of Sale checkout — no address at all). Determines which address field is meaningful (neither, for `pickup`). Does not affect the Order Status progression — `delivered` is the single terminal status for all three types, and `pickup` orders reach it the moment they're rung up (see Point of Sale).
+
+## Sales Channel
+
+A reporting-only grouping derived from Fulfillment Type, not a stored field of its own: `pickup` is the **Point of Sale** channel, while `local_delivery` and `shipping` together are the **Customer Web** channel. Used to filter or break down sales reports by where the sale happened, without introducing a second field that could drift out of sync with Fulfillment Type.
 
 ## Point of Sale
 
@@ -35,7 +43,7 @@ The customer's in-progress selection of products and quantities before they subm
 The lifecycle state of an Order. Forward progression:
 
 - `pending_payment` — order created but its total not yet fully collected (e.g. awaiting a PayPal/Venmo payment link, or a Point of Sale split sale still short of its total); skipped when a single payment covers the whole total at submission
-- `received` — set automatically on submission, or once `pending_payment` is fully paid
+- `received` — set automatically on submission, or once `pending_payment` is fully paid; the moment an Order first reaches `received` is recorded (`receivedAt`) — this is the date a Sale is attributed to, not the possibly-earlier `createdAt`
 - `processing` — owner marks order as being prepared
 - `ready` — owner marks order as ready
 - `shipped` — owner marks order as shipped
@@ -52,7 +60,15 @@ The structural rules governing which Order Status transitions are legal and what
 
 ## Order Cancellation
 
-Calling off an Order before fulfillment completes. Whether it is a **cancellation** or a **refund** depends on how far the order had progressed: orders in `ready`, `shipped`, or `delivered` are refunded (money already changed hands); orders in any earlier status are simply cancelled. Both end in a terminal Order Status (`cancelled` or `refunded` respectively) and are irreversible in the current system. PayPal captures (main and Custom Payment Request) are refunded automatically; any Cash Collected must be returned to the customer manually — the owner is prompted with a summary of what was auto-refunded versus what still needs manual return. Centralized in the `cancelOrder` mutation (`server/routers/orders.ts`); the refund/cancel split is defined by `REFUND_STATUSES`.
+Calling off an Order before fulfillment completes. Whether it is a **cancellation** or a **refund** depends on how far the order had progressed: orders in `ready`, `shipped`, or `delivered` are refunded (money already changed hands); orders in any earlier status are simply cancelled. Both end in a terminal Order Status (`cancelled` or `refunded` respectively) and are irreversible in the current system. PayPal captures (main and Custom Payment Request) are refunded automatically; any Cash Collected must be returned to the customer manually — the owner is prompted with a summary of what was auto-refunded versus what still needs manual return. Centralized in the `cancelOrder` mutation (`server/routers/orders.ts`); the refund/cancel split is defined by `REFUND_STATUSES`. The moment an Order reaches `refunded` is recorded (`refundedAt`) — this is the date a Refund is attributed to, independent of when the original Sale happened.
+
+## Sale
+
+A reporting concept, not a stored entity: an Order that reached `received` or later — `pending_payment` and `cancelled` orders never had a payment collected, so they're never Sales. A Sale is attributed to the period containing its `receivedAt` date. A `refunded` Order still counts as a Sale for the period it was originally received — gross, not netted — and separately counts as a Refund for the period it was refunded in; the same Order can appear in both, in different periods, which is why refunding something doesn't retroactively change a past period's sales figures.
+
+## Refund
+
+The reporting counterpart to a Sale: an Order that reached `refunded`, attributed to the period containing its `refundedAt` date (which may be a different period than its Sale). Sales Revenue and Refunds Total are reported side by side, plus their difference as Net Revenue — none of the three are stored, all are computed from Orders' `receivedAt`/`refundedAt` and `totalAmount`.
 
 ## Payment Method
 
