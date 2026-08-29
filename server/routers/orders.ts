@@ -26,7 +26,7 @@ async function settleCustomPayment(orderId: string, paidAmount: number, ctx: TRP
   if (order.status === "pending_payment" && balanceDue(order) <= 0) {
     const advanced = await db.order.update({
       where: { id: orderId },
-      data: { status: "received" },
+      data: { status: "received", receivedAt: new Date() },
       include: INCLUDE_FULL,
     });
     ctx.notifier
@@ -268,6 +268,7 @@ export const ordersRouter = router({
         where: { id: input.id },
         data: {
           status: input.status,
+          ...(input.status === "received" && !order.receivedAt ? { receivedAt: new Date() } : {}),
           ...(input.cashCollected !== undefined ? { cashCollected: input.cashCollected } : {}),
         },
         include: INCLUDE_FULL,
@@ -297,6 +298,7 @@ export const ordersRouter = router({
           paymentMethod: input.paymentMethod,
           notes: input.notes,
           totalAmount: totalAmount.toFixed(2),
+          receivedAt: new Date(),
           orderItems: {
             create: input.items.map((item) => {
               const unitPrice = Number(productMap[item.productId].price);
@@ -441,7 +443,7 @@ export const ordersRouter = router({
       if (input.amount >= totalAmount) {
         const received = await db.order.update({
           where: { id: order.id },
-          data: { status: "received" },
+          data: { status: "received", receivedAt: new Date() },
           include: INCLUDE_FULL,
         });
         ctx.notifier
@@ -477,7 +479,7 @@ export const ordersRouter = router({
       if (input.amount >= remaining) {
         const received = await db.order.update({
           where: { id: order.id },
-          data: { status: "received" },
+          data: { status: "received", receivedAt: new Date() },
           include: INCLUDE_FULL,
         });
         ctx.notifier
@@ -644,7 +646,7 @@ export const ordersRouter = router({
       if (remaining <= 0) {
         const received = await db.order.update({
           where: { id: order.id },
-          data: { status: "received" },
+          data: { status: "received", receivedAt: new Date() },
           include: INCLUDE_FULL,
         });
         ctx.notifier
@@ -689,6 +691,7 @@ export const ordersRouter = router({
         where: { id: input.orderId },
         data: {
           status: "received",
+          receivedAt: new Date(),
           paymentMethod: actualPaymentMethod,
           ...(captureId ? { paypalCaptureId: captureId } : {}),
         },
@@ -787,6 +790,7 @@ export const ordersRouter = router({
           paymentMethod: actualPaymentMethod,
           notes: input.notes,
           status: "received",
+          receivedAt: new Date(),
           totalAmount: totalAmount.toFixed(2),
           paypalOrderId: input.paypalOrderId,
           ...(captureId ? { paypalCaptureId: captureId } : {}),
@@ -911,7 +915,11 @@ export const ordersRouter = router({
 
       const order = await db.order.update({
         where: { id: input.id },
-        data: { status: newStatus, cashCollected: null },
+        data: {
+          status: newStatus,
+          cashCollected: null,
+          ...(isRefund ? { refundedAt: new Date() } : {}),
+        },
         include: { orderItems: { include: { product: true } } },
       });
 
@@ -1004,6 +1012,7 @@ export const ordersRouter = router({
       status: z.enum(["pending_payment", "received", "processing", "ready", "shipped", "delivered", "cancelled", "refunded"]),
     }))
     .mutation(async ({ input }) => {
+      const order = await db.order.findUniqueOrThrow({ where: { id: input.id } });
       const isCancellation = isCancelledOrRefunded(input.status);
       if (isCancellation) {
         await db.customPaymentRequest.updateMany({
@@ -1016,6 +1025,8 @@ export const ordersRouter = router({
         data: {
           status: input.status,
           ...(isCancellation ? { cashCollected: null } : {}),
+          ...(input.status === "received" && !order.receivedAt ? { receivedAt: new Date() } : {}),
+          ...(input.status === "refunded" && !order.refundedAt ? { refundedAt: new Date() } : {}),
         },
         include: INCLUDE_FULL,
       });
@@ -1038,7 +1049,7 @@ export const ordersRouter = router({
       if (order.status === "pending_payment" && balanceDue(updated) <= 0) {
         const advanced = await db.order.update({
           where: { id: input.id },
-          data: { status: "received" },
+          data: { status: "received", receivedAt: new Date() },
           include: INCLUDE_FULL,
         });
         ctx.notifier
@@ -1159,6 +1170,7 @@ export const ordersRouter = router({
         where: { id: input.orderId },
         data: {
           status: "received",
+          receivedAt: new Date(),
           paymentMethod: actualPaymentMethod,
           ...(captureId ? { paypalCaptureId: captureId } : {}),
         },

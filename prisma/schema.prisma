@@ -77,6 +77,8 @@ model Order {
   paypalInvoiceId       String?
   cashCollected         Decimal?               @db.Decimal(10, 2)
   createdAt             DateTime               @default(now())
+  receivedAt            DateTime?
+  refundedAt            DateTime?
   orderItems            OrderItem[]
   customPaymentRequests CustomPaymentRequest[]
   tenders               Tender[]

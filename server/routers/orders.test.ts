@@ -144,6 +144,7 @@ describe("orders.submit", () => {
           firstName: "Jane",
           lastName: "Smith",
           totalAmount: "39.00",
+          receivedAt: expect.any(Date),
           orderItems: {
             create: expect.arrayContaining([
               expect.objectContaining({
@@ -242,6 +243,31 @@ describe("orders.updateStatus", () => {
     expect(result.status).toBe("processing");
   });
 
+  it("valid transition: pending_payment → received sets receivedAt", async () => {
+    const pendingOrder = { ...mockOrder, status: "pending_payment" };
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(pendingOrder);
+    vi.mocked(db.order.update).mockResolvedValue({ ...pendingOrder, status: "received" });
+
+    await caller.orders.updateStatus({ id: "order-123", status: "received" });
+
+    expect(db.order.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: "received", receivedAt: expect.any(Date) } })
+    );
+  });
+
+  it("does not overwrite an already-set receivedAt on a backward processing → received correction", async () => {
+    const originalReceivedAt = new Date("2026-01-01T00:00:00Z");
+    const processingOrder = { ...mockOrder, status: "processing", receivedAt: originalReceivedAt };
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(processingOrder);
+    vi.mocked(db.order.update).mockResolvedValue({ ...processingOrder, status: "received" });
+
+    await caller.orders.updateStatus({ id: "order-123", status: "received" });
+
+    expect(db.order.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: "received" } })
+    );
+  });
+
   it("valid transition: ready → shipped", async () => {
     const readyOrder = { ...mockOrder, status: "ready" };
     vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(readyOrder);
@@ -299,6 +325,69 @@ describe("orders.updateStatus", () => {
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
 
     expect(db.order.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("orders.adminSetStatus", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("sets receivedAt when overriding status to received", async () => {
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue({ ...mockOrder, receivedAt: null });
+    vi.mocked(db.order.update).mockResolvedValue({ ...mockOrder, status: "received" });
+
+    await caller.orders.adminSetStatus({ id: "order-123", status: "received" });
+
+    expect(db.order.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "received", receivedAt: expect.any(Date) }) })
+    );
+  });
+
+  it("sets refundedAt when overriding status to refunded", async () => {
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue({ ...mockOrder, refundedAt: null });
+    vi.mocked(db.order.update).mockResolvedValue({ ...mockOrder, status: "refunded" });
+
+    await caller.orders.adminSetStatus({ id: "order-123", status: "refunded" });
+
+    expect(db.order.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "refunded", refundedAt: expect.any(Date) }) })
+    );
+  });
+
+  it("does not set receivedAt or refundedAt for an unrelated status override", async () => {
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(mockOrder);
+    vi.mocked(db.order.update).mockResolvedValue({ ...mockOrder, status: "processing" });
+
+    await caller.orders.adminSetStatus({ id: "order-123", status: "processing" });
+
+    expect(db.order.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: "processing" } })
+    );
+  });
+
+  it("does not overwrite an already-set receivedAt when re-overridden to received", async () => {
+    const originalReceivedAt = new Date("2026-01-01T00:00:00Z");
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue({ ...mockOrder, receivedAt: originalReceivedAt });
+    vi.mocked(db.order.update).mockResolvedValue({ ...mockOrder, status: "received" });
+
+    await caller.orders.adminSetStatus({ id: "order-123", status: "received" });
+
+    expect(db.order.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: "received" } })
+    );
+  });
+
+  it("does not overwrite an already-set refundedAt when re-overridden to refunded", async () => {
+    const originalRefundedAt = new Date("2026-01-01T00:00:00Z");
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue({ ...mockOrder, status: "refunded", refundedAt: originalRefundedAt });
+    vi.mocked(db.order.update).mockResolvedValue({ ...mockOrder, status: "refunded" });
+
+    await caller.orders.adminSetStatus({ id: "order-123", status: "refunded" });
+
+    expect(db.order.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: "refunded", cashCollected: null } })
+    );
   });
 });
 
@@ -537,7 +626,7 @@ describe("orders.captureCustomPayment", () => {
     const result = await caller.orders.captureCustomPayment({ requestId: "req-1", paypalOrderId: "PP-ORDER-1" });
 
     expect(db.order.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { status: "received" } })
+      expect.objectContaining({ data: { status: "received", receivedAt: expect.any(Date) } })
     );
     expect(mockNotify).toHaveBeenCalledWith(
       expect.objectContaining({ type: "order.payment_received" })
@@ -684,7 +773,7 @@ describe("orders.markCustomPaymentReceived", () => {
 
     expect(db.order.update).toHaveBeenCalledWith({
       where: { id: "order-123" },
-      data: { status: "received" },
+      data: { status: "received", receivedAt: expect.any(Date) },
       include: expect.anything(),
     });
     expect(mockNotify).toHaveBeenCalledWith({
@@ -1135,9 +1224,21 @@ describe("orders.cancelOrder", () => {
     const result = await caller.orders.cancelOrder({ id: "order-123" });
 
     expect(db.order.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { status: "refunded", cashCollected: null } })
+      expect.objectContaining({ data: { status: "refunded", cashCollected: null, refundedAt: expect.any(Date) } })
     );
     expect(result.isRefund).toBe(true);
+  });
+
+  it("does not set refundedAt when the outcome is a cancellation, not a refund", async () => {
+    const existing = cancelableOrder({ status: "received" });
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue(existing);
+    vi.mocked(db.order.update).mockResolvedValue({ ...existing, status: "cancelled" });
+
+    await caller.orders.cancelOrder({ id: "order-123" });
+
+    expect(db.order.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: "cancelled", cashCollected: null } })
+    );
   });
 });
 
@@ -1174,7 +1275,7 @@ describe("orders.posCreateOrderCashTender", () => {
       })
     );
     expect(db.order.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { status: "received" } })
+      expect.objectContaining({ data: { status: "received", receivedAt: expect.any(Date) } })
     );
     expect(mockNotify).toHaveBeenCalledWith(expect.objectContaining({ type: "order.received" }));
     expect(result.status).toBe("received");
@@ -1232,7 +1333,7 @@ describe("orders.posAddCashTender", () => {
       data: { orderId: "order-123", method: "cash", amount: "19.00" },
     });
     expect(db.order.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { status: "received" } })
+      expect.objectContaining({ data: { status: "received", receivedAt: expect.any(Date) } })
     );
     expect(mockNotify).toHaveBeenCalledWith(expect.objectContaining({ type: "order.received" }));
     expect(result.status).toBe("received");
@@ -1300,6 +1401,9 @@ describe("orders.posCaptureTender", () => {
     expect(db.order.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: { paymentMethod: "paypal" } })
     );
+    expect(db.order.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: "received", receivedAt: expect.any(Date) } })
+    );
     expect(result.status).toBe("received");
   });
 
@@ -1340,6 +1444,85 @@ describe("orders.posCaptureTender", () => {
 
     expect(db.tender.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ method: "venmo", paypalCaptureId: "CAP-VENMO" }) })
+    );
+  });
+});
+
+describe("orders.capturePaypalOrder", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal("fetch", vi.fn(async (url: string) =>
+      String(url).includes("/oauth2/token")
+        ? { ok: true, json: async () => ({ access_token: "test-token" }) }
+        : { ok: true, json: async () => ({ purchase_units: [{ payments: { captures: [{ id: "CAP-1" }] } }] }) }
+    ));
+  });
+
+  it("sets receivedAt when capturing the online-store checkout", async () => {
+    vi.mocked(db.order.update).mockResolvedValue(mockOrder);
+
+    await caller.orders.capturePaypalOrder({ orderId: "order-123", paypalOrderId: "PP-1" });
+
+    expect(db.order.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "received", receivedAt: expect.any(Date) }) })
+    );
+  });
+});
+
+describe("orders.capturePaypalWithPayerInfo", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(db.product.findMany).mockResolvedValue(mockProducts);
+    vi.stubGlobal("fetch", vi.fn(async (url: string) =>
+      String(url).includes("/oauth2/token")
+        ? { ok: true, json: async () => ({ access_token: "test-token" }) }
+        : {
+            ok: true,
+            json: async () => ({
+              payer: { name: { given_name: "Jane", surname: "Smith" }, email_address: "jane@example.com" },
+              purchase_units: [{ payments: { captures: [{ id: "CAP-1" }] } }],
+            }),
+          }
+    ));
+  });
+
+  it("sets receivedAt when creating an order from a captured payer-info checkout", async () => {
+    vi.mocked(db.order.create).mockResolvedValue(mockOrder);
+
+    await caller.orders.capturePaypalWithPayerInfo({
+      paypalOrderId: "PP-1",
+      fulfillmentType: "shipping",
+      addressLine1: "123 Main St",
+      city: "Rapid City",
+      state: "SD",
+      zip: "57701",
+      items: [{ productId: "product-1", quantity: 1 }],
+    });
+
+    expect(db.order.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "received", receivedAt: expect.any(Date) }) })
+    );
+  });
+});
+
+describe("orders.capturePaypalPaymentLink", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal("fetch", vi.fn(async (url: string) =>
+      String(url).includes("/oauth2/token")
+        ? { ok: true, json: async () => ({ access_token: "test-token" }) }
+        : { ok: true, json: async () => ({ purchase_units: [{ payments: { captures: [{ id: "CAP-1" }] } }] }) }
+    ));
+  });
+
+  it("sets receivedAt when capturing an existing order's payment link", async () => {
+    vi.mocked(db.order.findUniqueOrThrow).mockResolvedValue({ ...mockOrder, status: "pending_payment" });
+    vi.mocked(db.order.update).mockResolvedValue(mockOrder);
+
+    await caller.orders.capturePaypalPaymentLink({ orderId: "order-123", paypalOrderId: "PP-1" });
+
+    expect(db.order.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "received", receivedAt: expect.any(Date) }) })
     );
   });
 });
@@ -1491,6 +1674,9 @@ describe("orders.logCashCollected", () => {
 
     expect(mockNotify).toHaveBeenCalledWith(
       expect.objectContaining({ type: "order.received" })
+    );
+    expect(db.order.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: "received", receivedAt: expect.any(Date) } })
     );
   });
 
