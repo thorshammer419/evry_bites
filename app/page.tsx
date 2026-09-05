@@ -11,7 +11,7 @@ const createCaller = createCallerFactory(appRouter);
 
 export default async function Home() {
   const caller = createCaller({ notifier: new NullNotifier() });
-  const products = await caller.products.listActive();
+  const products = await caller.products.listStorefrontVisible();
 
   return (
     <div className="min-h-screen bg-bakery-pattern">

@@ -15,7 +15,8 @@ interface ProductFormProps {
     batchSize?: number;
     unitLabel?: string;
     imageUrl?: string | null;
-    active?: boolean;
+    posVisible?: boolean;
+    storefrontVisible?: boolean;
     ingredients?: string | null;
     unitsAvailable?: number | null;
   };
@@ -195,17 +196,32 @@ export default function ProductForm({
         />
       </div>
 
-      <div className="flex items-center gap-3">
-        <input
-          id="active"
-          name="active"
-          type="checkbox"
-          defaultChecked={defaultValues.active ?? true}
-          className="h-5 w-5 rounded border-sky-300 text-blue-800 focus:ring-sky-400"
-        />
-        <label htmlFor="active" className="text-sm font-medium text-blue-900">
-          Active (visible to customers)
-        </label>
+      <div className="space-y-3">
+        <p className="block text-sm font-medium text-blue-900">Visibility</p>
+        <div className="flex items-center gap-3">
+          <input
+            id="posVisible"
+            name="posVisible"
+            type="checkbox"
+            defaultChecked={defaultValues.posVisible ?? true}
+            className="h-5 w-5 rounded border-sky-300 text-blue-800 focus:ring-sky-400"
+          />
+          <label htmlFor="posVisible" className="text-sm text-blue-900">
+            Visible at POS (in-person counter checkout)
+          </label>
+        </div>
+        <div className="flex items-center gap-3">
+          <input
+            id="storefrontVisible"
+            name="storefrontVisible"
+            type="checkbox"
+            defaultChecked={defaultValues.storefrontVisible ?? true}
+            className="h-5 w-5 rounded border-sky-300 text-blue-800 focus:ring-sky-400"
+          />
+          <label htmlFor="storefrontVisible" className="text-sm text-blue-900">
+            Visible on the website
+          </label>
+        </div>
       </div>
 
       {state?.error && (

@@ -6,7 +6,7 @@ The atomic unit of sale for a product. Each product defines its batch size (e.g.
 
 ## Product
 
-A baked good available for purchase. Each product has a name, description, price (per batch), batch size, unit label (display string, e.g. "dozen"), image, and an active flag to control visibility.
+A baked good available for purchase. Each product has a name, description, price (per batch), batch size, unit label (display string, e.g. "dozen"), image, and two independent visibility flags: POS Visibility and Storefront Visibility. Either can be toggled off on its own — a product can be counter-only, website-only, both, or neither (decommissioned without being deleted). Not to be confused with Sales Channel, a reporting-only grouping of *orders* by how they were fulfilled — Product Visibility instead controls whether a product is listed at all on a given side. An Order can never include a product that isn't visible on the side it's being placed through: Point of Sale checkout requires POS Visibility, the online order form requires Storefront Visibility.
 
 ## Product Cost Record
 

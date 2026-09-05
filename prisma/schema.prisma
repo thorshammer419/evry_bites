@@ -42,19 +42,23 @@ enum TenderMethod {
 }
 
 model Product {
-  id             String              @id @default(uuid())
-  name           String
-  description    String
-  price          Decimal             @db.Decimal(10, 2)
-  batchSize      Int
-  unitLabel      String
-  imageUrl       String?
-  active         Boolean             @default(true)
-  createdAt      DateTime            @default(now())
-  ingredients    String?
-  unitsAvailable Int?
-  orderItems     OrderItem[]
-  costRecords    ProductCostRecord[]
+  id                String              @id @default(uuid())
+  name              String
+  description       String
+  price             Decimal             @db.Decimal(10, 2)
+  batchSize         Int
+  unitLabel         String
+  imageUrl          String?
+  // Independent per-channel visibility — see the Product glossary entry in
+  // CONTEXT.md. Replaces the old single `active` flag; a product hidden on
+  // both is decommissioned without being deleted.
+  posVisible        Boolean             @default(true)
+  storefrontVisible Boolean             @default(true)
+  createdAt         DateTime            @default(now())
+  ingredients       String?
+  unitsAvailable    Int?
+  orderItems        OrderItem[]
+  costRecords       ProductCostRecord[]
 }
 
 // Append-only cost history superseding Product's old single, non-historical

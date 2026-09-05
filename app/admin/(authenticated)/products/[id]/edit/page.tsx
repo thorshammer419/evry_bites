@@ -38,7 +38,8 @@ export default async function EditProductPage({ params }: EditProductPageProps) 
         batchSize: parseInt(formData.get("batchSize") as string, 10),
         unitLabel: formData.get("unitLabel") as string,
         imageUrl,
-        active: formData.get("active") === "on",
+        posVisible: formData.get("posVisible") === "on",
+        storefrontVisible: formData.get("storefrontVisible") === "on",
         ingredients: (formData.get("ingredients") as string) || undefined,
         unitsAvailable: formData.get("unitsAvailable") ? parseInt(formData.get("unitsAvailable") as string, 10) : undefined,
       });
@@ -70,7 +71,8 @@ export default async function EditProductPage({ params }: EditProductPageProps) 
               batchSize: product.batchSize,
               unitLabel: product.unitLabel,
               imageUrl: product.imageUrl,
-              active: product.active,
+              posVisible: product.posVisible,
+              storefrontVisible: product.storefrontVisible,
               ingredients: product.ingredients,
               unitsAvailable: product.unitsAvailable,
             }}

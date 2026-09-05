@@ -66,7 +66,8 @@ const mockProducts = [
     batchSize: 12,
     unitLabel: "dozen",
     imageUrl: null,
-    active: true,
+    posVisible: true,
+    storefrontVisible: true,
     createdAt: new Date(),
   },
   {
@@ -77,7 +78,8 @@ const mockProducts = [
     batchSize: 9,
     unitLabel: "pan",
     imageUrl: null,
-    active: true,
+    posVisible: true,
+    storefrontVisible: true,
     createdAt: new Date(),
   },
 ];
@@ -168,19 +170,30 @@ describe("orders.submit", () => {
     expect(result).toEqual(mockOrder);
   });
 
-  it("rejects order with inactive product", async () => {
-    const productsWithInactive = [
+  it("rejects order with a product hidden from the storefront", async () => {
+    const productsWithHidden = [
       mockProducts[0],
-      { ...mockProducts[1], active: false },
+      { ...mockProducts[1], storefrontVisible: false },
     ];
-    vi.mocked(db.product.findMany).mockResolvedValue(productsWithInactive);
+    vi.mocked(db.product.findMany).mockResolvedValue(productsWithHidden);
 
     await expect(caller.orders.submit(validInput)).rejects.toMatchObject({
       code: "BAD_REQUEST",
-      message: "One or more items are no longer available.",
+      message: "Brownies is no longer available for online ordering.",
     });
 
     expect(db.order.create).not.toHaveBeenCalled();
+  });
+
+  it("accepts a product hidden from POS but still visible on the storefront", async () => {
+    const productsPosHiddenOnly = [
+      mockProducts[0],
+      { ...mockProducts[1], posVisible: false },
+    ];
+    vi.mocked(db.product.findMany).mockResolvedValue(productsPosHiddenOnly);
+    vi.mocked(db.order.create).mockResolvedValue(mockOrder);
+
+    await expect(caller.orders.submit(validInput)).resolves.toEqual(mockOrder);
   });
 
   it("rejects order when a product ID is not found", async () => {
@@ -1301,6 +1314,39 @@ describe("orders.posCreateOrderCashTender", () => {
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
 
     expect(db.order.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects a product hidden from POS", async () => {
+    vi.mocked(db.product.findMany).mockResolvedValue([
+      mockProducts[0],
+      { ...mockProducts[1], posVisible: false },
+    ]);
+
+    await expect(
+      caller.orders.posCreateOrderCashTender({ items: posItems, amount: 39 })
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "Brownies is no longer available at the counter.",
+    });
+
+    expect(db.order.create).not.toHaveBeenCalled();
+  });
+
+  it("accepts a product hidden from the storefront but still visible at POS", async () => {
+    vi.mocked(db.product.findMany).mockResolvedValue([
+      mockProducts[0],
+      { ...mockProducts[1], storefrontVisible: false },
+    ]);
+    const created = {
+      ...mockOrder, fulfillmentType: "pickup", paymentMethod: "cash", status: "pending_payment",
+      totalAmount: "39.00", tenders: [{ id: "t-1", method: "cash", amount: "39.00" }],
+    };
+    vi.mocked(db.order.create).mockResolvedValue(created);
+    vi.mocked(db.order.update).mockResolvedValue({ ...created, status: "received" });
+
+    await expect(
+      caller.orders.posCreateOrderCashTender({ items: posItems, amount: 39 })
+    ).resolves.toMatchObject({ status: "received" });
   });
 });
 

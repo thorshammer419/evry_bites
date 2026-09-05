@@ -26,7 +26,8 @@ async function createProductAction(_prev: unknown, formData: FormData) {
       batchSize: parseInt(formData.get("batchSize") as string, 10),
       unitLabel: formData.get("unitLabel") as string,
       imageUrl,
-      active: formData.get("active") === "on",
+      posVisible: formData.get("posVisible") === "on",
+      storefrontVisible: formData.get("storefrontVisible") === "on",
       ingredients: (formData.get("ingredients") as string) || undefined,
       unitsAvailable: formData.get("unitsAvailable") ? parseInt(formData.get("unitsAvailable") as string, 10) : undefined,
     });

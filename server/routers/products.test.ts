@@ -31,22 +31,23 @@ const mockProduct = {
   batchSize: 12,
   unitLabel: "dozen",
   imageUrl: null,
-  active: true,
+  posVisible: true,
+  storefrontVisible: true,
   createdAt: new Date(),
 };
 
-describe("products.listActive", () => {
+describe("products.listPosVisible", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("queries only active products ordered by name", async () => {
+  it("queries only POS-visible products ordered by name", async () => {
     vi.mocked(db.product.findMany).mockResolvedValue([mockProduct]);
 
-    await caller.products.listActive();
+    await caller.products.listPosVisible();
 
     expect(db.product.findMany).toHaveBeenCalledWith({
-      where: { active: true },
+      where: { posVisible: true },
       orderBy: { name: "asc" },
     });
   });
@@ -58,7 +59,36 @@ describe("products.listActive", () => {
     ];
     vi.mocked(db.product.findMany).mockResolvedValue(products);
 
-    const result = await caller.products.listActive();
+    const result = await caller.products.listPosVisible();
+
+    expect(result).toEqual(products);
+  });
+});
+
+describe("products.listStorefrontVisible", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("queries only storefront-visible products ordered by name", async () => {
+    vi.mocked(db.product.findMany).mockResolvedValue([mockProduct]);
+
+    await caller.products.listStorefrontVisible();
+
+    expect(db.product.findMany).toHaveBeenCalledWith({
+      where: { storefrontVisible: true },
+      orderBy: { name: "asc" },
+    });
+  });
+
+  it("returns the products from the database", async () => {
+    const products = [
+      { ...mockProduct, id: "1", name: "Brownies" },
+      { ...mockProduct, id: "2", name: "Cookies" },
+    ];
+    vi.mocked(db.product.findMany).mockResolvedValue(products);
+
+    const result = await caller.products.listStorefrontVisible();
 
     expect(result).toEqual(products);
   });
@@ -69,10 +99,10 @@ describe("products.listAll", () => {
     vi.clearAllMocks();
   });
 
-  it("queries all products ordered by name (no active filter)", async () => {
+  it("queries all products ordered by name (no visibility filter)", async () => {
     const products = [
-      { ...mockProduct, id: "1", name: "Brownies", active: false },
-      { ...mockProduct, id: "2", name: "Cookies", active: true },
+      { ...mockProduct, id: "1", name: "Brownies", posVisible: false, storefrontVisible: false },
+      { ...mockProduct, id: "2", name: "Cookies" },
     ];
     vi.mocked(db.product.findMany).mockResolvedValue(products);
 
@@ -100,7 +130,8 @@ describe("products.create", () => {
       batchSize: 12,
       unitLabel: "dozen",
       imageUrl: undefined,
-      active: true,
+      posVisible: true,
+      storefrontVisible: true,
     };
 
     await caller.products.create(input);
@@ -113,9 +144,28 @@ describe("products.create", () => {
         batchSize: 12,
         unitLabel: "dozen",
         imageUrl: null,
-        active: true,
+        posVisible: true,
+        storefrontVisible: true,
       }),
     });
+  });
+
+  it("defaults both visibility flags to true when omitted", async () => {
+    vi.mocked(db.product.create).mockResolvedValue(mockProduct);
+
+    await caller.products.create({
+      name: "Cookies",
+      description: "Fresh cookies",
+      price: "12.00",
+      batchSize: 12,
+      unitLabel: "dozen",
+    });
+
+    expect(db.product.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ posVisible: true, storefrontVisible: true }),
+      })
+    );
   });
 
   it("saves imageUrl as null when empty string is provided", async () => {
@@ -128,7 +178,6 @@ describe("products.create", () => {
       batchSize: 12,
       unitLabel: "dozen",
       imageUrl: "",
-      active: true,
     });
 
     expect(db.product.create).toHaveBeenCalledWith(
@@ -158,7 +207,8 @@ describe("products.update", () => {
       batchSize: 12,
       unitLabel: "dozen",
       imageUrl: undefined,
-      active: true,
+      posVisible: true,
+      storefrontVisible: false,
     });
 
     expect(db.product.update).toHaveBeenCalledWith({
@@ -170,53 +220,60 @@ describe("products.update", () => {
         batchSize: 12,
         unitLabel: "dozen",
         imageUrl: null,
-        active: true,
+        posVisible: true,
+        storefrontVisible: false,
       }),
     });
   });
 });
 
-describe("products.toggleActive", () => {
+describe("products.toggleVisibility", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("flips active from true to false", async () => {
+  it("decommissions (hides both flags) a product visible on at least one channel", async () => {
     vi.mocked(db.product.findUnique).mockResolvedValue({
       ...mockProduct,
-      active: true,
+      posVisible: true,
+      storefrontVisible: false,
     });
     vi.mocked(db.product.update).mockResolvedValue({
       ...mockProduct,
-      active: false,
+      posVisible: false,
+      storefrontVisible: false,
     });
 
-    const result = await caller.products.toggleActive({ id: "1" });
+    const result = await caller.products.toggleVisibility({ id: "1" });
 
     expect(db.product.update).toHaveBeenCalledWith({
       where: { id: "1" },
-      data: { active: false },
+      data: { posVisible: false, storefrontVisible: false },
     });
-    expect(result.active).toBe(false);
+    expect(result.posVisible).toBe(false);
+    expect(result.storefrontVisible).toBe(false);
   });
 
-  it("flips active from false to true", async () => {
+  it("reactivates (shows both flags) a product hidden on both channels", async () => {
     vi.mocked(db.product.findUnique).mockResolvedValue({
       ...mockProduct,
-      active: false,
+      posVisible: false,
+      storefrontVisible: false,
     });
     vi.mocked(db.product.update).mockResolvedValue({
       ...mockProduct,
-      active: true,
+      posVisible: true,
+      storefrontVisible: true,
     });
 
-    const result = await caller.products.toggleActive({ id: "1" });
+    const result = await caller.products.toggleVisibility({ id: "1" });
 
     expect(db.product.update).toHaveBeenCalledWith({
       where: { id: "1" },
-      data: { active: true },
+      data: { posVisible: true, storefrontVisible: true },
     });
-    expect(result.active).toBe(true);
+    expect(result.posVisible).toBe(true);
+    expect(result.storefrontVisible).toBe(true);
   });
 });
 

@@ -5,14 +5,15 @@ import { revalidatePath } from "next/cache";
 import { createCallerFactory } from "../../../../server/trpc";
 import { appRouter } from "../../../../server/routers/_app";
 import { NullNotifier } from "../../../../lib/null-notifier";
+import { isDecommissioned } from "../../../../lib/product-visibility";
 
 const createCaller = createCallerFactory(appRouter);
 const caller = createCaller({ notifier: new NullNotifier() });
 
-async function toggleActiveAction(formData: FormData) {
+async function toggleVisibilityAction(formData: FormData) {
   "use server";
   const id = formData.get("id") as string;
-  await caller.products.toggleActive({ id });
+  await caller.products.toggleVisibility({ id });
   revalidatePath("/admin/products");
 }
 
@@ -43,55 +44,63 @@ export default async function AdminProductsPage() {
           </div>
         ) : (
           <div className="space-y-3">
-            {products.map((product) => (
-              <div
-                key={product.id}
-                className="bg-white rounded-3xl shadow-sm border border-sky-100 p-4"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h2 className="font-semibold text-blue-900 truncate">{product.name}</h2>
-                      {product.active ? (
-                        <span className="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full whitespace-nowrap">
-                          Active
+            {products.map((product) => {
+              const decommissioned = isDecommissioned(product);
+              return (
+                <div
+                  key={product.id}
+                  className="bg-white rounded-3xl shadow-sm border border-sky-100 p-4"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h2 className="font-semibold text-blue-900 truncate">{product.name}</h2>
+                        <span className={
+                          product.posVisible
+                            ? "bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full whitespace-nowrap"
+                            : "bg-gray-100 text-gray-500 text-xs px-2 py-0.5 rounded-full whitespace-nowrap"
+                        }>
+                          POS {product.posVisible ? "✓" : "✗"}
                         </span>
-                      ) : (
-                        <span className="bg-gray-100 text-gray-500 text-xs px-2 py-0.5 rounded-full whitespace-nowrap">
-                          Inactive
+                        <span className={
+                          product.storefrontVisible
+                            ? "bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full whitespace-nowrap"
+                            : "bg-gray-100 text-gray-500 text-xs px-2 py-0.5 rounded-full whitespace-nowrap"
+                        }>
+                          Web {product.storefrontVisible ? "✓" : "✗"}
                         </span>
-                      )}
+                      </div>
+                      <p className="text-sm text-blue-700 mt-0.5">
+                        ${Number(product.price).toFixed(2)} / {product.batchSize} {product.unitLabel}
+                      </p>
+                      <p className="text-xs text-sky-500 mt-1 line-clamp-2">{product.description}</p>
                     </div>
-                    <p className="text-sm text-blue-700 mt-0.5">
-                      ${Number(product.price).toFixed(2)} / {product.batchSize} {product.unitLabel}
-                    </p>
-                    <p className="text-xs text-sky-500 mt-1 line-clamp-2">{product.description}</p>
+                  </div>
+
+                  <div className="flex items-center gap-2 mt-3">
+                    <Link
+                      href={`/admin/products/${product.id}/edit`}
+                      className="flex-1 text-center border border-sky-200 text-blue-800 px-4 py-2 rounded-xl text-sm font-medium hover:bg-sky-50 transition-colors"
+                    >
+                      Edit
+                    </Link>
+                    <form action={toggleVisibilityAction}>
+                      <input type="hidden" name="id" value={product.id} />
+                      <button
+                        type="submit"
+                        className={
+                          decommissioned
+                            ? "px-4 py-2 rounded-xl text-sm font-medium bg-green-50 border border-green-200 text-green-700 hover:bg-green-100 transition-colors"
+                            : "px-4 py-2 rounded-xl text-sm font-medium bg-red-50 border border-red-200 text-red-700 hover:bg-red-100 transition-colors"
+                        }
+                      >
+                        {decommissioned ? "Reactivate" : "Decommission"}
+                      </button>
+                    </form>
                   </div>
                 </div>
-
-                <div className="flex items-center gap-2 mt-3">
-                  <Link
-                    href={`/admin/products/${product.id}/edit`}
-                    className="flex-1 text-center border border-sky-200 text-blue-800 px-4 py-2 rounded-xl text-sm font-medium hover:bg-sky-50 transition-colors"
-                  >
-                    Edit
-                  </Link>
-                  <form action={toggleActiveAction}>
-                    <input type="hidden" name="id" value={product.id} />
-                    <button
-                      type="submit"
-                      className={
-                        product.active
-                          ? "px-4 py-2 rounded-xl text-sm font-medium bg-red-50 border border-red-200 text-red-700 hover:bg-red-100 transition-colors"
-                          : "px-4 py-2 rounded-xl text-sm font-medium bg-green-50 border border-green-200 text-green-700 hover:bg-green-100 transition-colors"
-                      }
-                    >
-                      {product.active ? "Deactivate" : "Activate"}
-                    </button>
-                  </form>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

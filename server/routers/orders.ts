@@ -62,17 +62,40 @@ const orderFieldsSchema = z.object({
     .min(1),
 });
 
-async function resolveProducts(items: { productId: string; quantity: number }[]) {
+// Which visibility flag gates an order's line items — derived at each call
+// site from which mutation is calling (never re-derived from fulfillmentType
+// here), since an order's channel is never ambiguous: the online order form
+// only ever submits local_delivery/shipping, and POS-originated orders
+// always hardcode "pickup".
+type OrderChannel = "pos" | "storefront";
+
+const CHANNEL_VISIBILITY: Record<OrderChannel, { isVisible: (product: { posVisible: boolean; storefrontVisible: boolean }) => boolean; unavailableWhere: string }> = {
+  pos: { isVisible: (product) => product.posVisible, unavailableWhere: "at the counter" },
+  storefront: { isVisible: (product) => product.storefrontVisible, unavailableWhere: "for online ordering" },
+};
+
+async function resolveProducts(
+  items: { productId: string; quantity: number }[],
+  channel: OrderChannel
+) {
   const productIds = items.map((i) => i.productId);
   const products = await db.product.findMany({ where: { id: { in: productIds } } });
 
   const productMap: Record<string, (typeof products)[number]> = {};
   for (const product of products) productMap[product.id] = product;
 
+  const { isVisible, unavailableWhere } = CHANNEL_VISIBILITY[channel];
+
   for (const item of items) {
     const product = productMap[item.productId];
-    if (!product || !product.active) {
+    if (!product) {
       throw new TRPCError({ code: "BAD_REQUEST", message: "One or more items are no longer available." });
+    }
+    if (!isVisible(product)) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `${product.name} is no longer available ${unavailableWhere}.`,
+      });
     }
     if (product.unitsAvailable !== null && product.unitsAvailable < item.quantity) {
       const available = product.unitsAvailable;
@@ -282,7 +305,7 @@ export const ordersRouter = router({
   submit: publicProcedure
     .input(orderFieldsSchema)
     .mutation(async ({ input, ctx }) => {
-      const { productMap, totalAmount } = await resolveProducts(input.items);
+      const { productMap, totalAmount } = await resolveProducts(input.items, "storefront");
 
       const order = await db.order.create({
         data: {
@@ -326,7 +349,7 @@ export const ordersRouter = router({
   createPaypalOrder: publicProcedure
     .input(orderFieldsSchema)
     .mutation(async ({ input }) => {
-      const { productMap, totalAmount } = await resolveProducts(input.items);
+      const { productMap, totalAmount } = await resolveProducts(input.items, "storefront");
       const mode = process.env.PAYPAL_MODE ?? "sandbox";
       const baseUrl = mode === "live"
         ? "https://api-m.paypal.com"
@@ -405,7 +428,7 @@ export const ordersRouter = router({
   posCreateOrderCashTender: publicProcedure
     .input(posOrderFieldsSchema.extend({ amount: z.number().positive() }))
     .mutation(async ({ input, ctx }) => {
-      const { productMap, totalAmount } = await resolveProducts(input.items);
+      const { productMap, totalAmount } = await resolveProducts(input.items, "pos");
 
       if (input.amount > totalAmount) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Amount exceeds the order total." });
@@ -494,7 +517,7 @@ export const ordersRouter = router({
   posCreateOrderPaypalTender: publicProcedure
     .input(posOrderFieldsSchema.extend({ amount: z.number().positive() }))
     .mutation(async ({ input }) => {
-      const { productMap, totalAmount } = await resolveProducts(input.items);
+      const { productMap, totalAmount } = await resolveProducts(input.items, "pos");
 
       if (input.amount > totalAmount) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Amount exceeds the order total." });
@@ -712,7 +735,7 @@ export const ordersRouter = router({
       items: z.array(z.object({ productId: z.string(), quantity: z.number().int().positive() })).min(1),
     }))
     .mutation(async ({ input }) => {
-      const { totalAmount } = await resolveProducts(input.items);
+      const { totalAmount } = await resolveProducts(input.items, "storefront");
       const mode = process.env.PAYPAL_MODE ?? "sandbox";
       const baseUrl = mode === "live" ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com";
       const token = await getPaypalAccessToken();
@@ -745,7 +768,7 @@ export const ordersRouter = router({
       items: z.array(z.object({ productId: z.string(), quantity: z.number().int().positive() })).min(1),
     }))
     .mutation(async ({ input, ctx }) => {
-      const { productMap, totalAmount } = await resolveProducts(input.items);
+      const { productMap, totalAmount } = await resolveProducts(input.items, "storefront");
       const mode = process.env.PAYPAL_MODE ?? "sandbox";
       const baseUrl = mode === "live" ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com";
       const token = await getPaypalAccessToken();

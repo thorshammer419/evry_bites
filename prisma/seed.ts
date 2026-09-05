@@ -16,7 +16,6 @@ async function main() {
       price: "12.00",
       batchSize: 12,
       unitLabel: "dozen",
-      active: true,
     },
   });
 
@@ -30,7 +29,6 @@ async function main() {
       price: "9.00",
       batchSize: 6,
       unitLabel: "half-dozen",
-      active: true,
     },
   });
 
@@ -44,7 +42,6 @@ async function main() {
       price: "15.00",
       batchSize: 6,
       unitLabel: "half-dozen",
-      active: true,
     },
   });
 

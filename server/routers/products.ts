@@ -1,11 +1,19 @@
 import { z } from "zod";
 import { router, publicProcedure } from "../trpc";
 import { db } from "../../lib/db";
+import { isDecommissioned } from "../../lib/product-visibility";
 
 export const productsRouter = router({
-  listActive: publicProcedure.query(() =>
+  listPosVisible: publicProcedure.query(() =>
     db.product.findMany({
-      where: { active: true },
+      where: { posVisible: true },
+      orderBy: { name: "asc" },
+    })
+  ),
+
+  listStorefrontVisible: publicProcedure.query(() =>
+    db.product.findMany({
+      where: { storefrontVisible: true },
       orderBy: { name: "asc" },
     })
   ),
@@ -25,7 +33,8 @@ export const productsRouter = router({
         batchSize: z.number().int().positive(),
         unitLabel: z.string().min(1),
         imageUrl: z.string().optional(),
-        active: z.boolean().default(true),
+        posVisible: z.boolean().default(true),
+        storefrontVisible: z.boolean().default(true),
         ingredients: z.string().optional(),
         unitsAvailable: z.number().int().min(0).optional(),
       })
@@ -39,7 +48,8 @@ export const productsRouter = router({
           batchSize: input.batchSize,
           unitLabel: input.unitLabel,
           imageUrl: input.imageUrl || null,
-          active: input.active,
+          posVisible: input.posVisible,
+          storefrontVisible: input.storefrontVisible,
           ingredients: input.ingredients || null,
           unitsAvailable: input.unitsAvailable ?? null,
         },
@@ -56,7 +66,8 @@ export const productsRouter = router({
         batchSize: z.number().int().positive(),
         unitLabel: z.string().min(1),
         imageUrl: z.string().optional(),
-        active: z.boolean(),
+        posVisible: z.boolean(),
+        storefrontVisible: z.boolean(),
         ingredients: z.string().optional(),
         unitsAvailable: z.number().int().min(0).optional(),
       })
@@ -71,21 +82,26 @@ export const productsRouter = router({
           batchSize: input.batchSize,
           unitLabel: input.unitLabel,
           imageUrl: input.imageUrl || null,
-          active: input.active,
+          posVisible: input.posVisible,
+          storefrontVisible: input.storefrontVisible,
           ingredients: input.ingredients || null,
           unitsAvailable: input.unitsAvailable ?? null,
         },
       })
     ),
 
-  toggleActive: publicProcedure
+  // The admin product list's single quick-action button: pulls a product
+  // entirely (both flags off) or brings it fully back (both on). Independent
+  // per-channel control lives in the edit form instead.
+  toggleVisibility: publicProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ input }) => {
       const product = await db.product.findUnique({ where: { id: input.id } });
       if (!product) throw new Error("Product not found");
+      const shouldReactivate = isDecommissioned(product);
       return db.product.update({
         where: { id: input.id },
-        data: { active: !product.active },
+        data: { posVisible: shouldReactivate, storefrontVisible: shouldReactivate },
       });
     }),
 

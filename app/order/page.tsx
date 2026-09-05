@@ -9,7 +9,7 @@ const createCaller = createCallerFactory(appRouter);
 
 export default async function OrderPage() {
   const caller = createCaller({ notifier: new NullNotifier() });
-  const products = await caller.products.listActive();
+  const products = await caller.products.listStorefrontVisible();
 
   return <OrderFormClient products={products} />;
 }
