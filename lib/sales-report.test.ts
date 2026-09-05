@@ -1,19 +1,25 @@
 import { describe, it, expect } from "vitest";
 import { computeSalesReport, type Granularity } from "./sales-report";
-import type { OrderStatus } from "@prisma/client";
+import type { FulfillmentType, OrderStatus, PaymentMethod } from "@prisma/client";
 
 function order({
   status = "received",
   receivedAt = null,
   refundedAt = null,
   totalAmount,
+  paymentMethod = "cash",
+  fulfillmentType = "pickup",
+  orderItems = [],
 }: {
   status?: OrderStatus;
   receivedAt?: string | null;
   refundedAt?: string | null;
   totalAmount: number | string;
+  paymentMethod?: PaymentMethod;
+  fulfillmentType?: FulfillmentType;
+  orderItems?: { productId: string; quantity: number; subtotal: number | string }[];
 }) {
-  return { status, receivedAt, refundedAt, totalAmount };
+  return { status, receivedAt, refundedAt, totalAmount, paymentMethod, fulfillmentType, orderItems };
 }
 
 describe("computeSalesReport", () => {
@@ -225,4 +231,142 @@ describe("computeSalesReport", () => {
       expect(rows).toEqual([]);
     }
   );
+
+  it("defaults to a single ungrouped row per bucket with a null group key", () => {
+    const rows = computeSalesReport(
+      [order({ receivedAt: "2026-03-10T00:00:00Z", totalAmount: 10 })],
+      "day"
+    );
+    expect(rows).toEqual([expect.objectContaining({ groupKey: null })]);
+  });
+
+  describe("groupBy: paymentMethod", () => {
+    it("breaks a bucket into one row per payment method", () => {
+      const rows = computeSalesReport(
+        [
+          order({ receivedAt: "2026-03-10T00:00:00Z", totalAmount: 20, paymentMethod: "cash" }),
+          order({ receivedAt: "2026-03-10T00:00:00Z", totalAmount: 30, paymentMethod: "venmo" }),
+        ],
+        "day",
+        "paymentMethod"
+      );
+      expect(rows).toEqual([
+        expect.objectContaining({ groupKey: "cash", salesCount: 1, salesRevenue: 20 }),
+        expect.objectContaining({ groupKey: "venmo", salesCount: 1, salesRevenue: 30 }),
+      ]);
+    });
+  });
+
+  describe("groupBy: channel", () => {
+    it("derives Point of Sale vs Customer Web from fulfillment type", () => {
+      const rows = computeSalesReport(
+        [
+          order({ receivedAt: "2026-03-10T00:00:00Z", totalAmount: 20, fulfillmentType: "pickup" }),
+          order({ receivedAt: "2026-03-10T00:00:00Z", totalAmount: 15, fulfillmentType: "shipping" }),
+          order({ receivedAt: "2026-03-10T00:00:00Z", totalAmount: 5, fulfillmentType: "local_delivery" }),
+        ],
+        "day",
+        "channel"
+      );
+      expect(rows).toEqual([
+        expect.objectContaining({ groupKey: "customer_web", salesCount: 2, salesRevenue: 20 }),
+        expect.objectContaining({ groupKey: "point_of_sale", salesCount: 1, salesRevenue: 20 }),
+      ]);
+    });
+  });
+
+  describe("groupBy: product", () => {
+    it("counts a product's quantity sold, not the number of orders it appeared in", () => {
+      const rows = computeSalesReport(
+        [
+          order({
+            receivedAt: "2026-03-10T00:00:00Z",
+            totalAmount: 30,
+            orderItems: [{ productId: "cookies", quantity: 3, subtotal: 30 }],
+          }),
+          order({
+            receivedAt: "2026-03-10T00:00:00Z",
+            totalAmount: 20,
+            orderItems: [{ productId: "cookies", quantity: 2, subtotal: 20 }],
+          }),
+        ],
+        "day",
+        "product"
+      );
+      expect(rows).toEqual([
+        expect.objectContaining({ groupKey: "cookies", salesCount: 5, salesRevenue: 50 }),
+      ]);
+    });
+
+    it("attributes a multi-product order's exact per-item subtotal as each product's sales revenue", () => {
+      const rows = computeSalesReport(
+        [
+          order({
+            receivedAt: "2026-03-10T00:00:00Z",
+            totalAmount: 50, // includes a $10 delivery fee beyond the $40 of line items
+            orderItems: [
+              { productId: "cookies", quantity: 1, subtotal: 30 },
+              { productId: "brownies", quantity: 1, subtotal: 10 },
+            ],
+          }),
+        ],
+        "day",
+        "product"
+      );
+      expect(rows).toEqual([
+        expect.objectContaining({ groupKey: "brownies", salesCount: 1, salesRevenue: 10 }),
+        expect.objectContaining({ groupKey: "cookies", salesCount: 1, salesRevenue: 30 }),
+      ]);
+    });
+
+    it("splits a refunded multi-product order's refund total proportionally by each item's share of the order's items", () => {
+      const rows = computeSalesReport(
+        [
+          order({
+            status: "refunded",
+            receivedAt: "2026-03-10T00:00:00Z",
+            refundedAt: "2026-03-10T00:00:00Z",
+            totalAmount: 50, // a $10 delivery fee is distributed proportionally too
+            orderItems: [
+              { productId: "cookies", quantity: 1, subtotal: 30 },
+              { productId: "brownies", quantity: 1, subtotal: 10 },
+            ],
+          }),
+        ],
+        "day",
+        "product"
+      );
+      expect(rows).toEqual([
+        expect.objectContaining({ groupKey: "brownies", refundsCount: 1, refundsTotal: 12.5 }),
+        expect.objectContaining({ groupKey: "cookies", refundsCount: 1, refundsTotal: 37.5 }),
+      ]);
+    });
+
+    it("omits rows for products excluded by an active product filter, without changing the included product's proportional refund share", () => {
+      const rows = computeSalesReport(
+        [
+          order({
+            status: "refunded",
+            receivedAt: "2026-03-10T00:00:00Z",
+            refundedAt: "2026-03-10T00:00:00Z",
+            totalAmount: 40,
+            orderItems: [
+              { productId: "cookies", quantity: 1, subtotal: 30 },
+              { productId: "brownies", quantity: 1, subtotal: 10 },
+            ],
+          }),
+        ],
+        "day",
+        "product",
+        ["cookies"]
+      );
+      // Only the filtered-in product gets its own row...
+      expect(rows).toEqual([
+        expect.objectContaining({ groupKey: "cookies", salesCount: 1, salesRevenue: 30, refundsTotal: 30 }),
+      ]);
+      // ...and its 30/40 share is computed against the order's full item set,
+      // not re-normalized to 100% just because brownies was filtered out of
+      // the output (that would overstate cookies' true share of the refund).
+    });
+  });
 });

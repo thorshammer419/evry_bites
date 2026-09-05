@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { trpc } from "../../../../lib/trpc/react";
-import type { Granularity, SalesReportRow } from "../../../../lib/sales-report";
+import type { GroupBy, Granularity, SalesReportRow } from "../../../../lib/sales-report";
 
 const GRANULARITIES: { value: Granularity; label: string }[] = [
   { value: "day", label: "Day" },
@@ -28,6 +28,30 @@ const CHANNEL_OPTIONS: { value: ChannelFilter | ""; label: string }[] = [
   { value: "point_of_sale", label: "POS" },
   { value: "customer_web", label: "Customer Web" },
 ];
+
+const GROUP_BY_OPTIONS: { value: GroupBy; label: string }[] = [
+  { value: "none", label: "None" },
+  { value: "paymentMethod", label: "Payment Method" },
+  { value: "product", label: "Product" },
+  { value: "channel", label: "Channel" },
+];
+
+// The table's group-by category value is a raw payment method / channel /
+// product id — look up the same human label already defined for the
+// matching filter (or the product list) rather than duplicating labels.
+function groupRowLabel(groupBy: GroupBy, groupKey: string | null, productNameById: Map<string, string>): string {
+  if (groupKey === null) return "";
+  if (groupBy === "paymentMethod") {
+    return PAYMENT_METHOD_OPTIONS.find((o) => o.value === groupKey)?.label ?? groupKey;
+  }
+  if (groupBy === "channel") {
+    return CHANNEL_OPTIONS.find((o) => o.value === groupKey)?.label ?? groupKey;
+  }
+  if (groupBy === "product") {
+    return productNameById.get(groupKey) ?? groupKey;
+  }
+  return "";
+}
 
 function toggleSet<T>(set: Set<T>, value: T): Set<T> {
   const next = new Set(set);
@@ -133,6 +157,7 @@ function SalesChart({ rows, metric }: { rows: SalesReportRow[]; metric: ChartMet
 export function AdminSalesClient() {
   const [granularity, setGranularity] = useState<Granularity>("month");
   const [chartMetric, setChartMetric] = useState<ChartMetric>("salesRevenue");
+  const [groupBy, setGroupBy] = useState<GroupBy>("none");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethodFilter | "">("");
   const [channel, setChannel] = useState<ChannelFilter | "">("");
   const [productFilter, setProductFilter] = useState<Set<string>>(new Set());
@@ -151,6 +176,7 @@ export function AdminSalesClient() {
 
   const { data: products } = trpc.products.listAll.useQuery();
   const productOptions = (products ?? []).map((p) => ({ value: p.id, label: p.name }));
+  const productNameById = new Map(productOptions.map((p) => [p.value, p.label]));
 
   const hasDateRange = Boolean(dateFrom && dateTo);
   const hasAnyFilter =
@@ -170,14 +196,27 @@ export function AdminSalesClient() {
     setDateTo("");
   }
 
-  const { data: rows, isLoading, isError } = trpc.sales.report.useQuery({
+  const filterInput = {
     granularity,
     ...(paymentMethod && { paymentMethod }),
     ...(channel && { channel }),
     ...(productFilter.size > 0 && { productIds: Array.from(productFilter) }),
     ...(customerName && { customerName }),
     ...(hasDateRange && { dateFrom, dateTo }),
-  });
+  };
+
+  const { data: rows, isLoading, isError } = trpc.sales.report.useQuery({ ...filterInput, groupBy });
+
+  // The chart always shows one ungrouped time series regardless of the
+  // table's group-by — grouped rows can't be safely summed back into it (a
+  // product-grouped row's sales revenue is its own line item's subtotal,
+  // which needn't add up to the order total the ungrouped view uses) — so a
+  // second, always-ungrouped query feeds the chart whenever grouping is on.
+  const { data: ungroupedRows } = trpc.sales.report.useQuery(
+    { ...filterInput, groupBy: "none" },
+    { enabled: groupBy !== "none" }
+  );
+  const chartRows = groupBy === "none" ? rows : ungroupedRows;
 
   return (
     <div className="px-4 py-6">
@@ -261,7 +300,14 @@ export function AdminSalesClient() {
           )}
         </div>
 
-        {rows && rows.length > 0 && (
+        <div className="mb-4">
+          <p className="text-xs font-semibold text-sky-400 uppercase tracking-wide mb-1.5">
+            Group By
+          </p>
+          <PillGroup options={GROUP_BY_OPTIONS} value={groupBy} onChange={setGroupBy} />
+        </div>
+
+        {chartRows && chartRows.length > 0 && (
           <div className="mb-4">
             <p className="text-xs font-semibold text-sky-400 uppercase tracking-wide mb-1.5">
               Chart Metric
@@ -269,7 +315,7 @@ export function AdminSalesClient() {
             <div className="mb-3">
               <PillGroup options={CHART_METRICS} value={chartMetric} onChange={setChartMetric} />
             </div>
-            <SalesChart rows={rows} metric={chartMetric} />
+            <SalesChart rows={chartRows} metric={chartMetric} />
           </div>
         )}
 
@@ -295,6 +341,7 @@ export function AdminSalesClient() {
               <thead>
                 <tr className="border-b border-sky-100 text-left text-xs font-semibold text-sky-400 uppercase tracking-wide">
                   <th className="px-4 py-3">Period</th>
+                  {groupBy !== "none" && <th className="px-4 py-3">Group</th>}
                   <th className="px-4 py-3 text-right">Sales</th>
                   <th className="px-4 py-3 text-right">Revenue</th>
                   <th className="px-4 py-3 text-right">Refunds</th>
@@ -304,8 +351,11 @@ export function AdminSalesClient() {
               </thead>
               <tbody>
                 {rows.map((row) => (
-                  <tr key={row.periodStart} className="border-b border-sky-50 last:border-b-0 text-blue-900">
+                  <tr key={`${row.periodStart}::${row.groupKey ?? ""}`} className="border-b border-sky-50 last:border-b-0 text-blue-900">
                     <td className="px-4 py-3 whitespace-nowrap">{row.periodLabel}</td>
+                    {groupBy !== "none" && (
+                      <td className="px-4 py-3 whitespace-nowrap">{groupRowLabel(groupBy, row.groupKey, productNameById)}</td>
+                    )}
                     <td className="px-4 py-3 text-right">{row.salesCount}</td>
                     <td className="px-4 py-3 text-right">{formatCurrency(row.salesRevenue)}</td>
                     <td className="px-4 py-3 text-right">{row.refundsCount}</td>

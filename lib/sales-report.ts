@@ -1,8 +1,29 @@
-import type { Prisma, OrderStatus } from "@prisma/client";
+import type { FulfillmentType, OrderStatus, PaymentMethod, Prisma } from "@prisma/client";
 
 type DecimalLike = Prisma.Decimal | number | string;
 
 export type Granularity = "day" | "week" | "month" | "year";
+export type GroupBy = "none" | "paymentMethod" | "product" | "channel";
+
+// A reporting-only grouping derived from Fulfillment Type, not a stored
+// field — see the Sales Channel glossary entry in CONTEXT.md.
+export type Channel = "point_of_sale" | "customer_web";
+
+const CHANNEL_BY_FULFILLMENT_TYPE: Record<FulfillmentType, Channel> = {
+  pickup: "point_of_sale",
+  local_delivery: "customer_web",
+  shipping: "customer_web",
+};
+
+export function channelForFulfillmentType(type: FulfillmentType): Channel {
+  return CHANNEL_BY_FULFILLMENT_TYPE[type];
+}
+
+type OrderLineItemForSalesReport = {
+  productId: string;
+  quantity: number;
+  subtotal: DecimalLike;
+};
 
 type OrderForSalesReport = {
   status: OrderStatus;
@@ -13,12 +34,20 @@ type OrderForSalesReport = {
   // status — null for every order that hasn't been refunded.
   refundedAt: Date | string | null;
   totalAmount: DecimalLike;
+  // Only consulted when grouping by that dimension; omitted by tests that
+  // don't exercise group-by.
+  paymentMethod?: PaymentMethod;
+  fulfillmentType?: FulfillmentType;
+  orderItems?: OrderLineItemForSalesReport[];
 };
 
 export type SalesReportRow = {
   // Bucket start as an ISO date (YYYY-MM-DD), also usable as a stable sort/react key.
   periodStart: string;
   periodLabel: string;
+  // The row's category value when grouped (a payment method, a channel, or a
+  // product id) — null for the ungrouped report.
+  groupKey: string | null;
   salesCount: number;
   salesRevenue: number;
   refundsCount: number;
@@ -35,6 +64,7 @@ const excludedStatusSet = new Set(EXCLUDED_STATUSES);
 
 type Bucket = {
   start: Date;
+  groupKey: string | null;
   salesCount: number;
   salesRevenue: number;
   refundsCount: number;
@@ -86,18 +116,36 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+function attributeSale(bucket: Bucket, count: number, revenue: number): void {
+  bucket.salesCount += count;
+  bucket.salesRevenue += revenue;
+}
+
+function attributeRefund(bucket: Bucket, count: number, revenue: number): void {
+  bucket.refundsCount += count;
+  bucket.refundsTotal += revenue;
+}
+
 export function computeSalesReport(
   orders: OrderForSalesReport[],
-  granularity: Granularity
+  granularity: Granularity,
+  groupBy: GroupBy = "none",
+  // When grouping by product while a product filter is active, only the
+  // filtered-in products should get their own row — an order can qualify for
+  // the filter via one product while also containing others the admin didn't
+  // ask about. This only decides which rows get emitted; it must not affect
+  // itemsSubtotalSum below, which still needs every item in the order to
+  // compute a fair refund share for the ones that do get emitted.
+  productIdFilter?: string[]
 ): SalesReportRow[] {
   const buckets = new Map<string, Bucket>();
 
-  function bucketFor(date: Date): Bucket {
+  function bucketFor(date: Date, groupKey: string | null): Bucket {
     const start = bucketStart(date, granularity);
-    const key = isoDate(start);
+    const key = `${isoDate(start)}::${groupKey ?? ""}`;
     let bucket = buckets.get(key);
     if (!bucket) {
-      bucket = { start, salesCount: 0, salesRevenue: 0, refundsCount: 0, refundsTotal: 0 };
+      bucket = { start, groupKey, salesCount: 0, salesRevenue: 0, refundsCount: 0, refundsTotal: 0 };
       buckets.set(key, bucket);
     }
     return bucket;
@@ -107,29 +155,59 @@ export function computeSalesReport(
     if (excludedStatusSet.has(order.status)) continue;
 
     const total = Number(order.totalAmount);
+    const isRefunded = order.status === "refunded" && Boolean(order.refundedAt);
+
+    if (groupBy === "product") {
+      // A product-line-item's own subtotal is already an exact dollar figure
+      // for that product, so a Sale uses it directly. A Refund has no such
+      // per-item figure — Order Cancellation refunds the whole order — so it
+      // must be approximated: each item's share of the order's *other line
+      // items* (not of totalAmount, which may include fees no item reflects)
+      // applied to the order's totalAmount.
+      const itemsSubtotalSum = (order.orderItems ?? []).reduce((sum, item) => sum + Number(item.subtotal), 0);
+
+      for (const item of order.orderItems ?? []) {
+        if (productIdFilter && !productIdFilter.includes(item.productId)) continue;
+
+        const itemSubtotal = Number(item.subtotal);
+        const share = itemsSubtotalSum > 0 ? itemSubtotal / itemsSubtotalSum : 0;
+
+        if (order.receivedAt) {
+          attributeSale(bucketFor(new Date(order.receivedAt), item.productId), item.quantity, itemSubtotal);
+        }
+        if (isRefunded) {
+          attributeRefund(bucketFor(new Date(order.refundedAt!), item.productId), item.quantity, share * total);
+        }
+      }
+      continue;
+    }
+
+    const groupKey =
+      groupBy === "paymentMethod"
+        ? (order.paymentMethod ?? null)
+        : groupBy === "channel" && order.fulfillmentType
+          ? channelForFulfillmentType(order.fulfillmentType)
+          : null;
 
     // A Sale is attributed to the period it was received in — gross, so a
     // later refund never revises a past period's sales figures.
     if (order.receivedAt) {
-      const bucket = bucketFor(new Date(order.receivedAt));
-      bucket.salesCount += 1;
-      bucket.salesRevenue += total;
+      attributeSale(bucketFor(new Date(order.receivedAt), groupKey), 1, total);
     }
 
     // A Refund is attributed separately, to the period it was refunded in —
     // which may be a different bucket entirely than the original Sale.
-    if (order.status === "refunded" && order.refundedAt) {
-      const bucket = bucketFor(new Date(order.refundedAt));
-      bucket.refundsCount += 1;
-      bucket.refundsTotal += total;
+    if (isRefunded) {
+      attributeRefund(bucketFor(new Date(order.refundedAt!), groupKey), 1, total);
     }
   }
 
-  return Array.from(buckets.entries())
-    .sort(([, a], [, b]) => a.start.getTime() - b.start.getTime())
-    .map(([periodStart, bucket]) => ({
-      periodStart,
+  return Array.from(buckets.values())
+    .sort((a, b) => a.start.getTime() - b.start.getTime() || (a.groupKey ?? "").localeCompare(b.groupKey ?? ""))
+    .map((bucket) => ({
+      periodStart: isoDate(bucket.start),
       periodLabel: formatLabel(bucket.start, granularity),
+      groupKey: bucket.groupKey,
       salesCount: bucket.salesCount,
       salesRevenue: round2(bucket.salesRevenue),
       refundsCount: bucket.refundsCount,

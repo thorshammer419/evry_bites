@@ -41,7 +41,15 @@ describe("salesRouter.report", () => {
           },
         ],
       },
-      select: { status: true, receivedAt: true, refundedAt: true, totalAmount: true },
+      select: {
+        status: true,
+        receivedAt: true,
+        refundedAt: true,
+        totalAmount: true,
+        paymentMethod: true,
+        fulfillmentType: true,
+        orderItems: { select: { productId: true, quantity: true, subtotal: true } },
+      },
     });
   });
 
@@ -186,6 +194,124 @@ describe("salesRouter.report", () => {
         { firstName: { contains: "smith", mode: "insensitive" } },
         { lastName: { contains: "smith", mode: "insensitive" } },
       ],
+    });
+  });
+
+  describe("groupBy", () => {
+    it("groups by payment method", async () => {
+      vi.mocked(db.order.findMany).mockResolvedValue([
+        {
+          status: "received",
+          receivedAt: new Date("2026-08-10T09:00:00Z"),
+          refundedAt: null,
+          totalAmount: "20.00",
+          paymentMethod: "cash",
+          fulfillmentType: "pickup",
+          orderItems: [],
+        },
+        {
+          status: "received",
+          receivedAt: new Date("2026-08-10T09:00:00Z"),
+          refundedAt: null,
+          totalAmount: "30.00",
+          paymentMethod: "venmo",
+          fulfillmentType: "pickup",
+          orderItems: [],
+        },
+      ] as never);
+
+      const rows = await caller.sales.report({ granularity: "month", groupBy: "paymentMethod" });
+
+      expect(rows).toEqual([
+        expect.objectContaining({ groupKey: "cash", salesRevenue: 20 }),
+        expect.objectContaining({ groupKey: "venmo", salesRevenue: 30 }),
+      ]);
+    });
+
+    it("groups by sales channel", async () => {
+      vi.mocked(db.order.findMany).mockResolvedValue([
+        {
+          status: "received",
+          receivedAt: new Date("2026-08-10T09:00:00Z"),
+          refundedAt: null,
+          totalAmount: "20.00",
+          paymentMethod: "cash",
+          fulfillmentType: "pickup",
+          orderItems: [],
+        },
+        {
+          status: "received",
+          receivedAt: new Date("2026-08-10T09:00:00Z"),
+          refundedAt: null,
+          totalAmount: "15.00",
+          paymentMethod: "cash",
+          fulfillmentType: "shipping",
+          orderItems: [],
+        },
+      ] as never);
+
+      const rows = await caller.sales.report({ granularity: "month", groupBy: "channel" });
+
+      expect(rows).toEqual([
+        expect.objectContaining({ groupKey: "customer_web", salesRevenue: 15 }),
+        expect.objectContaining({ groupKey: "point_of_sale", salesRevenue: 20 }),
+      ]);
+    });
+
+    it("groups by product, attributing each line item's exact subtotal and quantity", async () => {
+      vi.mocked(db.order.findMany).mockResolvedValue([
+        {
+          status: "received",
+          receivedAt: new Date("2026-08-10T09:00:00Z"),
+          refundedAt: null,
+          totalAmount: "40.00",
+          paymentMethod: "cash",
+          fulfillmentType: "pickup",
+          orderItems: [
+            { productId: "prod-1", quantity: 2, subtotal: "30.00" },
+            { productId: "prod-2", quantity: 1, subtotal: "10.00" },
+          ],
+        },
+      ] as never);
+
+      const rows = await caller.sales.report({ granularity: "month", groupBy: "product" });
+
+      expect(rows).toEqual([
+        expect.objectContaining({ groupKey: "prod-1", salesCount: 2, salesRevenue: 30 }),
+        expect.objectContaining({ groupKey: "prod-2", salesCount: 1, salesRevenue: 10 }),
+      ]);
+    });
+
+    it("composes with a product filter: an order matching via one product doesn't leak the order's other products into the breakdown", async () => {
+      vi.mocked(db.order.findMany).mockResolvedValue([
+        {
+          status: "received",
+          receivedAt: new Date("2026-08-10T09:00:00Z"),
+          refundedAt: null,
+          totalAmount: "40.00",
+          paymentMethod: "cash",
+          fulfillmentType: "pickup",
+          orderItems: [
+            { productId: "prod-1", quantity: 2, subtotal: "30.00" },
+            { productId: "prod-2", quantity: 1, subtotal: "10.00" },
+          ],
+        },
+      ] as never);
+
+      const rows = await caller.sales.report({
+        granularity: "month",
+        groupBy: "product",
+        productIds: ["prod-1"],
+      });
+
+      expect(rows).toEqual([expect.objectContaining({ groupKey: "prod-1", salesRevenue: 30 })]);
+    });
+
+    it("composes with a non-product filter: grouping by channel still respects a payment method filter", async () => {
+      await caller.sales.report({ granularity: "month", groupBy: "channel", paymentMethod: "venmo" });
+
+      const { where } = vi.mocked(db.order.findMany).mock.calls[0][0]!;
+      expect(where!.AND).toContainEqual({ paymentMethod: "venmo" });
     });
   });
 });

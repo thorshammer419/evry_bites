@@ -2,12 +2,13 @@ import { z } from "zod";
 import type { FulfillmentType, Prisma } from "@prisma/client";
 import { router, publicProcedure } from "../trpc";
 import { db } from "../../lib/db";
-import { computeSalesReport, EXCLUDED_STATUSES } from "../../lib/sales-report";
-
-type Channel = "point_of_sale" | "customer_web";
+import { computeSalesReport, EXCLUDED_STATUSES, type Channel } from "../../lib/sales-report";
 
 // Sales Channel isn't a stored field — it's derived from Fulfillment Type at
-// query time, per the domain glossary (CONTEXT.md).
+// query time, per the domain glossary (CONTEXT.md). This is the inverse of
+// channelForFulfillmentType in lib/sales-report.ts (there: one order's type
+// -> its channel, for grouping; here: a chosen channel -> the types to
+// filter on).
 const FULFILLMENT_TYPES_BY_CHANNEL: Record<Channel, FulfillmentType | { in: FulfillmentType[] }> = {
   point_of_sale: "pickup",
   customer_web: { in: ["local_delivery", "shipping"] },
@@ -59,6 +60,7 @@ export const salesRouter = router({
       z
         .object({
           granularity: z.enum(["day", "week", "month", "year"]),
+          groupBy: z.enum(["none", "paymentMethod", "product", "channel"]).default("none"),
           paymentMethod: z.enum(["venmo", "paypal", "cash", "check"]).optional(),
           channel: z.enum(["point_of_sale", "customer_web"]).optional(),
           productIds: z.array(z.string()).optional(),
@@ -97,7 +99,15 @@ export const salesRouter = router({
 
       const orders = await db.order.findMany({
         where: { status: { notIn: EXCLUDED_STATUSES }, AND: conditions },
-        select: { status: true, receivedAt: true, refundedAt: true, totalAmount: true },
+        select: {
+          status: true,
+          receivedAt: true,
+          refundedAt: true,
+          totalAmount: true,
+          paymentMethod: true,
+          fulfillmentType: true,
+          orderItems: { select: { productId: true, quantity: true, subtotal: true } },
+        },
       });
 
       // An order can match the query above via one side (e.g. refunded this
@@ -117,6 +127,11 @@ export const salesRouter = router({
             : null,
       }));
 
-      return computeSalesReport(scoped, input.granularity);
+      return computeSalesReport(
+        scoped,
+        input.granularity,
+        input.groupBy,
+        input.productIds && input.productIds.length > 0 ? input.productIds : undefined
+      );
     }),
 });
