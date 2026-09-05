@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { db } from "../../../../../../lib/db";
 import ProductForm from "../../ProductForm";
+import { ProductCostHistory } from "../../ProductCostHistory";
 import { createCallerFactory } from "../../../../../../server/trpc";
 import { appRouter } from "../../../../../../server/routers/_app";
 import { uploadProductImage } from "../../../../../../lib/blob";
@@ -39,7 +40,6 @@ export default async function EditProductPage({ params }: EditProductPageProps) 
         imageUrl,
         active: formData.get("active") === "on",
         ingredients: (formData.get("ingredients") as string) || undefined,
-        supplyCostPerBatch: (formData.get("supplyCostPerBatch") as string) || undefined,
         unitsAvailable: formData.get("unitsAvailable") ? parseInt(formData.get("unitsAvailable") as string, 10) : undefined,
       });
 
@@ -72,13 +72,14 @@ export default async function EditProductPage({ params }: EditProductPageProps) 
               imageUrl: product.imageUrl,
               active: product.active,
               ingredients: product.ingredients,
-              supplyCostPerBatch: product.supplyCostPerBatch
-                ? String(product.supplyCostPerBatch)
-                : null,
               unitsAvailable: product.unitsAvailable,
             }}
             submitLabel="Save Changes"
           />
+        </div>
+
+        <div className="bg-white rounded-3xl shadow-sm border border-sky-100 p-6 mt-6">
+          <ProductCostHistory productId={id} />
         </div>
       </div>
     </div>

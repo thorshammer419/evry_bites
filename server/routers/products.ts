@@ -27,7 +27,6 @@ export const productsRouter = router({
         imageUrl: z.string().optional(),
         active: z.boolean().default(true),
         ingredients: z.string().optional(),
-        supplyCostPerBatch: z.string().optional(),
         unitsAvailable: z.number().int().min(0).optional(),
       })
     )
@@ -42,7 +41,6 @@ export const productsRouter = router({
           imageUrl: input.imageUrl || null,
           active: input.active,
           ingredients: input.ingredients || null,
-          supplyCostPerBatch: input.supplyCostPerBatch || null,
           unitsAvailable: input.unitsAvailable ?? null,
         },
       })
@@ -60,7 +58,6 @@ export const productsRouter = router({
         imageUrl: z.string().optional(),
         active: z.boolean(),
         ingredients: z.string().optional(),
-        supplyCostPerBatch: z.string().optional(),
         unitsAvailable: z.number().int().min(0).optional(),
       })
     )
@@ -76,7 +73,6 @@ export const productsRouter = router({
           imageUrl: input.imageUrl || null,
           active: input.active,
           ingredients: input.ingredients || null,
-          supplyCostPerBatch: input.supplyCostPerBatch || null,
           unitsAvailable: input.unitsAvailable ?? null,
         },
       })
@@ -92,4 +88,31 @@ export const productsRouter = router({
         data: { active: !product.active },
       });
     }),
+
+  addCostRecord: publicProcedure
+    .input(
+      z.object({
+        productId: z.string(),
+        costPerBatch: z.string(),
+        effectiveFrom: z.string(),
+      })
+    )
+    .mutation(({ input }) =>
+      db.productCostRecord.create({
+        data: {
+          productId: input.productId,
+          costPerBatch: input.costPerBatch,
+          effectiveFrom: new Date(`${input.effectiveFrom}T00:00:00.000Z`),
+        },
+      })
+    ),
+
+  listCostHistory: publicProcedure
+    .input(z.object({ productId: z.string() }))
+    .query(({ input }) =>
+      db.productCostRecord.findMany({
+        where: { productId: input.productId },
+        orderBy: { effectiveFrom: "desc" },
+      })
+    ),
 });

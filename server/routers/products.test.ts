@@ -11,6 +11,10 @@ vi.mock("../../lib/db", () => ({
       create: vi.fn(),
       update: vi.fn(),
     },
+    productCostRecord: {
+      findMany: vi.fn(),
+      create: vi.fn(),
+    },
   },
 }));
 
@@ -213,5 +217,55 @@ describe("products.toggleActive", () => {
       data: { active: true },
     });
     expect(result.active).toBe(true);
+  });
+});
+
+const mockCostRecord = {
+  id: "cost-1",
+  productId: "1",
+  costPerBatch: "8.50" as never,
+  effectiveFrom: new Date("2026-09-01T00:00:00Z"),
+  createdAt: new Date(),
+};
+
+describe("products.addCostRecord", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("creates a cost record with the product id, cost, and effective-from date", async () => {
+    vi.mocked(db.productCostRecord.create).mockResolvedValue(mockCostRecord);
+
+    await caller.products.addCostRecord({
+      productId: "1",
+      costPerBatch: "8.50",
+      effectiveFrom: "2026-09-01",
+    });
+
+    expect(db.productCostRecord.create).toHaveBeenCalledWith({
+      data: {
+        productId: "1",
+        costPerBatch: "8.50",
+        effectiveFrom: new Date("2026-09-01T00:00:00.000Z"),
+      },
+    });
+  });
+});
+
+describe("products.listCostHistory", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("lists a product's cost records, most recently effective first", async () => {
+    vi.mocked(db.productCostRecord.findMany).mockResolvedValue([mockCostRecord]);
+
+    const result = await caller.products.listCostHistory({ productId: "1" });
+
+    expect(db.productCostRecord.findMany).toHaveBeenCalledWith({
+      where: { productId: "1" },
+      orderBy: { effectiveFrom: "desc" },
+    });
+    expect(result).toEqual([mockCostRecord]);
   });
 });

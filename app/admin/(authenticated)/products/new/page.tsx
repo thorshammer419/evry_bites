@@ -28,7 +28,6 @@ async function createProductAction(_prev: unknown, formData: FormData) {
       imageUrl,
       active: formData.get("active") === "on",
       ingredients: (formData.get("ingredients") as string) || undefined,
-      supplyCostPerBatch: (formData.get("supplyCostPerBatch") as string) || undefined,
       unitsAvailable: formData.get("unitsAvailable") ? parseInt(formData.get("unitsAvailable") as string, 10) : undefined,
     });
 

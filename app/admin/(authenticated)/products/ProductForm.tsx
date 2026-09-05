@@ -17,7 +17,6 @@ interface ProductFormProps {
     imageUrl?: string | null;
     active?: boolean;
     ingredients?: string | null;
-    supplyCostPerBatch?: string | null;
     unitsAvailable?: number | null;
   };
   submitLabel?: string;
@@ -177,22 +176,6 @@ export default function ProductForm({
           defaultValue={defaultValues.ingredients ?? ""}
           className="w-full rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-blue-900 placeholder-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400 resize-none"
           placeholder="e.g. flour, sugar, butter, eggs, vanilla extract (contains gluten, dairy, eggs)"
-        />
-      </div>
-
-      <div>
-        <label htmlFor="supplyCostPerBatch" className="block text-sm font-medium text-blue-900 mb-1">
-          Supply Cost per Batch ($) <span className="text-sky-500 font-normal">(optional)</span>
-        </label>
-        <input
-          id="supplyCostPerBatch"
-          name="supplyCostPerBatch"
-          type="number"
-          step="0.01"
-          min="0"
-          defaultValue={defaultValues.supplyCostPerBatch ?? ""}
-          className="w-full rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-blue-900 placeholder-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400"
-          placeholder="0.00"
         />
       </div>
 

@@ -42,19 +42,35 @@ enum TenderMethod {
 }
 
 model Product {
-  id                 String       @id @default(uuid())
-  name               String
-  description        String
-  price              Decimal      @db.Decimal(10, 2)
-  batchSize          Int
-  unitLabel          String
-  imageUrl           String?
-  active             Boolean      @default(true)
-  createdAt          DateTime     @default(now())
-  ingredients        String?
-  supplyCostPerBatch Decimal?     @db.Decimal(10, 2)
-  unitsAvailable     Int?
-  orderItems         OrderItem[]
+  id             String              @id @default(uuid())
+  name           String
+  description    String
+  price          Decimal             @db.Decimal(10, 2)
+  batchSize      Int
+  unitLabel      String
+  imageUrl       String?
+  active         Boolean             @default(true)
+  createdAt      DateTime            @default(now())
+  ingredients    String?
+  unitsAvailable Int?
+  orderItems     OrderItem[]
+  costRecords    ProductCostRecord[]
+}
+
+// Append-only cost history superseding Product's old single, non-historical
+// cost-per-batch value — see the Product Cost Record glossary entry in
+// CONTEXT.md. No update or delete is ever exposed: correcting a mistake
+// means adding a new record, not editing history. The record that applies
+// to a given date is whichever has the latest effectiveFrom on or before
+// it — never computed here, since nothing consumes it yet (no profit/margin
+// calculation exists in this codebase).
+model ProductCostRecord {
+  id            String   @id @default(cuid())
+  productId     String
+  product       Product  @relation(fields: [productId], references: [id])
+  costPerBatch  Decimal  @db.Decimal(10, 2)
+  effectiveFrom DateTime
+  createdAt     DateTime @default(now())
 }
 
 model Order {
