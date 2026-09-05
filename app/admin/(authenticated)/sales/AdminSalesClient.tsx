@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { rowsToCsv } from "../../../../lib/csv";
 import { trpc } from "../../../../lib/trpc/react";
 import type { GroupBy, Granularity, SalesReportRow } from "../../../../lib/sales-report";
 
@@ -51,6 +52,33 @@ function groupRowLabel(groupBy: GroupBy, groupKey: string | null, productNameByI
     return productNameById.get(groupKey) ?? groupKey;
   }
   return "";
+}
+
+// The exported CSV mirrors the table exactly — same columns (including the
+// Group column only when grouped), same rows, same order — so it always
+// reflects whatever filters/granularity/group-by produced the current view.
+function salesReportCsv(rows: SalesReportRow[], groupBy: GroupBy, productNameById: Map<string, string>): string {
+  const headers = ["Period", ...(groupBy !== "none" ? ["Group"] : []), "Sales", "Revenue", "Refunds", "Refunded", "Net"];
+  const data = rows.map((row) => [
+    row.periodLabel,
+    ...(groupBy !== "none" ? [groupRowLabel(groupBy, row.groupKey, productNameById)] : []),
+    row.salesCount,
+    row.salesRevenue,
+    row.refundsCount,
+    row.refundsTotal,
+    row.netRevenue,
+  ]);
+  return rowsToCsv(headers, data);
+}
+
+function downloadCsv(filename: string, csv: string): void {
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 function toggleSet<T>(set: Set<T>, value: T): Set<T> {
@@ -218,6 +246,12 @@ export function AdminSalesClient() {
   );
   const chartRows = groupBy === "none" ? rows : ungroupedRows;
 
+  function exportCsv() {
+    if (!rows || rows.length === 0) return;
+    const csv = salesReportCsv(rows, groupBy, productNameById);
+    downloadCsv(`sales-report-${new Date().toISOString().slice(0, 10)}.csv`, csv);
+  }
+
   return (
     <div className="px-4 py-6">
       <div className="max-w-lg mx-auto">
@@ -336,9 +370,20 @@ export function AdminSalesClient() {
           </div>
         )}
         {rows && rows.length > 0 && (
+          <div className="flex justify-end mb-2">
+            <button
+              onClick={exportCsv}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium border border-sky-200 text-blue-700 hover:bg-sky-50 transition-colors"
+            >
+              Export CSV
+            </button>
+          </div>
+        )}
+        {rows && rows.length > 0 && (
           <div className="overflow-x-auto rounded-2xl border border-sky-100 bg-white shadow-sm">
             <table className="w-full text-sm">
               <thead>
+                {/* Keep in sync with salesReportCsv's headers above — the CSV export mirrors these columns. */}
                 <tr className="border-b border-sky-100 text-left text-xs font-semibold text-sky-400 uppercase tracking-wide">
                   <th className="px-4 py-3">Period</th>
                   {groupBy !== "none" && <th className="px-4 py-3">Group</th>}
